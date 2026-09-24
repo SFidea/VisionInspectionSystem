@@ -272,7 +272,11 @@ public class SOPStateMachine
         if (CurrentStepId >= _workflow.Steps.Max(s => s.StepId))
         {
             ChangeState(SOPExecutionState.Completed);
-            WorkflowCompleted?.Invoke(this, new SOPCompletedEventArgs(_stepHistory, _violations));
+            WorkflowCompleted?.Invoke(this, new SOPCompletedEventArgs(_stepHistory, _violations)
+            {
+                WorkflowName = _workflow.Name,
+                WorkflowId = _workflow.Id
+            });
 
             if (_workflow.Settings.AutoResetOnComplete)
             {
@@ -432,19 +436,24 @@ public class ViolationEventArgs : EventArgs
     }
 }
 
-public class SOPCompletedEventArgs : EventArgs
-{
-    public IReadOnlyList<StepExecutionRecord> StepHistory { get; }
-    public IReadOnlyList<ViolationRecord> Violations { get; }
-    public TimeSpan TotalDuration => StepHistory.Last().EndTime - StepHistory.First().StartTime;
-    public bool HasViolations => Violations.Count > 0;
-
-    public SOPCompletedEventArgs(IReadOnlyList<StepExecutionRecord> stepHistory, IReadOnlyList<ViolationRecord> violations)
+    public class SOPCompletedEventArgs : EventArgs
     {
-        StepHistory = stepHistory;
-        Violations = violations;
+        public IReadOnlyList<StepExecutionRecord> StepHistory { get; }
+        public IReadOnlyList<ViolationRecord> Violations { get; }
+        public TimeSpan TotalDuration => StepHistory.Last().EndTime - StepHistory.First().StartTime;
+        public bool HasViolations => Violations.Count > 0;
+
+        /// <summary>本次运行所属的 SOP 流程名称（来自 SOPWorkflow.Name），供运行记录器归类。</summary>
+        public string WorkflowName { get; set; } = "";
+        /// <summary>本次运行所属的 SOP 流程 Id（来自 SOPWorkflow.Id）。</summary>
+        public string WorkflowId { get; set; } = "";
+
+        public SOPCompletedEventArgs(IReadOnlyList<StepExecutionRecord> stepHistory, IReadOnlyList<ViolationRecord> violations)
+        {
+            StepHistory = stepHistory;
+            Violations = violations;
+        }
     }
-}
 
 public class StateChangedEventArgs : EventArgs
 {

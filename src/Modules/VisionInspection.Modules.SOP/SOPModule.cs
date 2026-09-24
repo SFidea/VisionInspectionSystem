@@ -51,6 +51,9 @@ public class SOPModule : IDetectionModule
     // MediaPipe 为默认后端（握拳/横向手泛化好、无需额外大模型）。
     private HandDetectionBackend _handBackend = HandDetectionBackend.MediaPipe;
 
+    // SOP 运行数据记录器：每个周期(OK/NG)+每步耗时写入按天文件
+    private SopRunRecorder? _runRecorder;
+
     // 文件日志记录器
     private static readonly object _sopLogLock = new();
     private const string _sopDebugLogPath = "sop_module_debug.log";
@@ -265,6 +268,11 @@ public class SOPModule : IDetectionModule
             // 初始化状态机（先初始化状态机，确保核心功能可用）
             _stateMachine = new SOPStateMachine();
             SubscribeToStateMachineEvents();
+
+            // 启用 SOP 运行数据记录器：每个周期(OK/NG) + 每步耗时写入按天文件 sop_records/
+            _runRecorder = new SopRunRecorder();
+            _runRecorder.Subscribe(this);
+            Log("SOP 运行数据记录器已启用，记录写入 sop_records/（每个周期一行 jsonl + 每步一行 csv）");
 
             State = ModuleState.Ready;
 
@@ -1124,6 +1132,10 @@ public class SOPModule : IDetectionModule
     {
         try
         {
+            // 注销 SOP 运行数据记录器
+            _runRecorder?.Unsubscribe(this);
+            _runRecorder = null;
+
             // 先停止工作流
             StopWorkflow();
 
