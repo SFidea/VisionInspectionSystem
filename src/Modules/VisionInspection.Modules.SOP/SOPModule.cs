@@ -949,7 +949,7 @@ public class SOPModule : IDetectionModule
 
         try
         {
-            detections = yolo.RunObjectDetection(frame.Image, _config.ConfidenceThreshold).ToList();
+            detections = yolo.RunObjectDetection(frame.Image, confidence: _config.ConfidenceThreshold, iou: _config.IouThreshold).ToList();
             DebugLog($"YOLO 物体检测 ({frame.CameraId}): {detections.Count} 个目标");
         }
         catch (Exception ex)

@@ -55,6 +55,13 @@ public class StepConditionEvaluator
         // 同步更新物体跨帧区域访问记录（用于放回等步骤的 from_region 约束）
         UpdateObjectRegions(detections);
 
+        // 步骤切换时清零稳定帧计数（按 StepId 区分，旧步骤的计数自然失效）
+        if (step.StepId != _lastEvaluatedStepId)
+        {
+            _stablePassCounts.Clear();
+            _lastEvaluatedStepId = step.StepId;
+        }
+
         if (step.PassConditions.Count == 0)
         {
             return new ConditionEvaluationResult { IsPass = true };
@@ -82,9 +89,12 @@ public class StepConditionEvaluator
             Dbg($"step='{step.StepName}' hands={handSummary} dets={detSummary}");
         }
 
+        int conditionIndex = 0;
         foreach (var condition in step.PassConditions)
         {
             var result = CheckCondition(condition, detections, handResult, ignoreFromRegion);
+            // P0-2：对未自管理帧计数的条件施加通用稳定帧门控
+            ApplyStableFrameGate(step.StepId, conditionIndex, condition, result);
             results.Add(result);
 
             if (!result.IsMet)
@@ -97,6 +107,7 @@ public class StepConditionEvaluator
                     CheckResults = results
                 };
             }
+            conditionIndex++;
         }
 
         return new ConditionEvaluationResult
@@ -136,6 +147,38 @@ public class StepConditionEvaluator
         };
     }
 
+    /// <summary>
+    /// 通用"稳定帧"门控：对非自管理帧计数的条件，要求连续命中 StableFrames 帧才视为满足，
+    /// 避免单帧误检直接放行（工业现场最危险的跳步/漏检来源）。
+    /// HandStable / ObjectStable 内部已含帧计数，跳过以免双重计数。
+    /// </summary>
+    private void ApplyStableFrameGate(int stepId, int conditionIndex, StepCondition condition, ConditionCheckResult result)
+    {
+        if (condition.Type == ConditionType.HandStable || condition.Type == ConditionType.ObjectStable)
+            return;
+
+        int required = condition.StableFrames;
+        if (required <= 1) return; // 无稳定帧要求时保持原有单帧判定语义
+
+        string key = $"{stepId}:{conditionIndex}";
+        if (result.IsMet)
+        {
+            _stablePassCounts.TryGetValue(key, out int count);
+            count++;
+            _stablePassCounts[key] = count;
+            if (count < required)
+            {
+                result.IsMet = false;
+                result.Message += $"（稳定帧门控 {count}/{required}）";
+            }
+        }
+        else
+        {
+            // 条件本身未满足 → 连续计数清零
+            _stablePassCounts[key] = 0;
+        }
+    }
+
     #region 手部动作条件评估
 
     /// <summary>
@@ -154,6 +197,13 @@ public class StepConditionEvaluator
     // 例如喝水步骤里判定的是"杯子到达嘴边"（物体而非手），所以 from_region(mouth_region)
     // 的访问证据应来自物体轨迹，否则放回步骤会卡死在 visitedFrom=false。
     private readonly Dictionary<string, HashSet<string>> _objectVisitedRegions = new(StringComparer.OrdinalIgnoreCase);
+
+    // 通用"稳定帧"门控：按 (步骤ID, 条件序号) 记录连续命中帧数，
+    // 达到 condition.StableFrames 才放行（P0-2 修复：原 object_present/object_in_zone/
+    // person_present/hand_in_region/hand_not_in_region/hand_move/hand_near_object 单帧命中即过，无防抖）。
+    // HandStable 与 ObjectStable 内部已自行管理帧计数，不再叠加门控。
+    private readonly Dictionary<string, int> _stablePassCounts = new();
+    private int _lastEvaluatedStepId = -1;
 
     private void UpdateHandTracks(HandPoseEstimationResult? handResult)
     {
@@ -275,6 +325,17 @@ public class StepConditionEvaluator
             }
             case ConditionType.HandStable:
             {
+                // 若指定了区域，要求手部中心必须位于该区域内（P0-5 修复：原 hand_stable 丢弃 region）
+                if (!string.IsNullOrEmpty(condition.ZoneId))
+                {
+                    var zone = GetZoneDefinition(condition.ZoneId);
+                    if (zone == null)
+                        return new ConditionCheckResult { IsMet = false, Message = $"未找到区域: {condition.ZoneId}" };
+                    var zoneRect = new SKRect(zone.X, zone.Y, zone.X + zone.Width, zone.Y + zone.Height);
+                    if (!zoneRect.Contains(center))
+                        return new ConditionCheckResult { IsMet = false, Message = $"手部未位于区域 {condition.ZoneId} 内，稳定判定取消" };
+                }
+
                 if (!_handTracks.TryGetValue(hand.TrackId, out var track) || track.CenterHistory.Count < condition.StableFrames)
                     return new ConditionCheckResult { IsMet = false, Message = $"手部稳定帧不足（已跟踪 {track?.CenterHistory.Count ?? 0}/{condition.StableFrames}）" };
 

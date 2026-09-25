@@ -822,6 +822,8 @@ public static class SOPYamlConverter
 
             case "hand_stable":
                 condition.Type = ConditionType.HandStable;
+                condition.TargetObject = "hand";
+                condition.ZoneId = detection.Region ?? "";
                 condition.Parameters["HandSide"] = detection.Hand ?? "right";
                 condition.Parameters["Tolerance"] = detection.Tolerance;
                 break;
