@@ -681,6 +681,7 @@ public static class SOPYamlConverter
                 EnableSkipDetection = yamlSop.Settings.EnableSkipDetection,
                 EnableTimeoutDetection = yamlSop.Settings.EnableTimeoutDetection,
                 StableFrameCount = yamlSop.Settings.StableFrames,
+                ConfidenceThreshold = yamlSop.Settings.ConfidenceThreshold,
                 PositionTolerance = 20f, // 默认值
                 // ⭐ 改为使用 yaml 字段（已带 snake_case alias，缺省时走 SopyamlSettings 模型默认值 true / 3），
                 // 这样 SOP 完成后会自动循环检测下一轮，符合持续监控场景。

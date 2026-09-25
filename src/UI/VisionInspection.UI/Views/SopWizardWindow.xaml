@@ -180,6 +180,15 @@
                         <TextBox Text="{Binding SopDescription, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="360" Height="60" Padding="5" BorderBrush="#B0BEC5" BorderThickness="1" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
                     </StackPanel>
 
+                    <!-- 本流程模型（P0-1：写入根级 sop.model） -->
+                    <StackPanel Orientation="Horizontal" Margin="0,8">
+                        <TextBlock Text="本流程模型：" Width="100" VerticalAlignment="Center"/>
+                        <ComboBox ItemsSource="{Binding SopModelOptions}" DisplayMemberPath="Display"
+                                  SelectedValuePath="Value" SelectedValue="{Binding SopModelPath, Mode=TwoWay}"
+                                  Width="360" Padding="5" BorderBrush="#B0BEC5" BorderThickness="1"
+                                  ToolTip="选择本套 SOP 使用的检测模型（含自定义类别）。不选则运行时回退到通用 COCO 模型，自定义类别将无法检出。"/>
+                    </StackPanel>
+
                     <!-- 区域/物体预设 -->
                     <Grid Margin="0,8">
                         <Grid.ColumnDefinitions>

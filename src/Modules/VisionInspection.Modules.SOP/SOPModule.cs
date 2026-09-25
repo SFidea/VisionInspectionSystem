@@ -1165,6 +1165,29 @@ public class SOPModule : IDetectionModule
             }
         }
 
+        // P0-3: 全局置信度接线 + 允许步骤 min_confidence 调低生效
+        // 有效截断 = min(全局基准置信度, 所有步骤 min_confidence 的最小值)
+        // 这样 settings.confidenceThreshold 与 step.min_confidence 双向都生效：
+        //   - 全局调高 → 整体更严格；全局调低 → 整体更宽松
+        //   - 步骤要求高于截断 → 步骤内 evaluator 用自身 min_confidence 二次过滤
+        //   - 步骤要求低于截断（原"调低无效"问题）→ 因截断已降到该值，步骤可正常检出
+        float baseConf;
+        if (workflow.Settings != null && workflow.Settings.ConfidenceThreshold > 0)
+            baseConf = workflow.Settings.ConfidenceThreshold;
+        else if (workflow.Model != null)
+            baseConf = workflow.Model.Confidence;
+        else
+            baseConf = _config.ConfidenceThreshold;
+
+        float minStepConf = workflow.Steps
+            .SelectMany(s => s.PassConditions)
+            .Select(c => c.MinConfidence)
+            .Where(v => v > 0)
+            .DefaultIfEmpty(baseConf)
+            .Min();
+        _config.ConfidenceThreshold = Math.Min(baseConf, minStepConf);
+        Log($"置信度设置: 基准={baseConf:F2} (settings/model), 步骤最低要求={minStepConf:F2} → YOLO截断={_config.ConfidenceThreshold:F2}");
+
         _stateMachine.Start(workflow);
     }
 

@@ -131,6 +131,9 @@ public class SopWizardInput
     /// <summary>是否启用超时检测（settings.enableTimeoutDetection；false 时每步 timeout 不生效）</summary>
     public bool EnableTimeoutDetection { get; set; } = true;
 
+    /// <summary>本流程使用的根级模型路径（写入 YAML sop.model.path；为空则运行时回退到通用 COCO 模型）</summary>
+    public string SopModelPath { get; set; } = "";
+
     /// <summary>本流程使用的区域名称预设（英文标识，用于第③步下拉选择）</summary>
     public List<string> RegionPresets { get; set; } = new();
 

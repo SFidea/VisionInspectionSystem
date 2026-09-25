@@ -33,8 +33,10 @@ public partial class SopWizardViewModel : ObservableObject
     [ObservableProperty] private string _sopName = "";
     [ObservableProperty] private string _sopDescription = "";
     [ObservableProperty] private bool _includePersonEntry = true;
-    /// <summary>是否启用超时检测（settings.enableTimeoutDetection；false 时每步超时不生效）</summary>
-    [ObservableProperty] private bool _enableTimeoutDetection = true;
+        /// <summary>是否启用超时检测（settings.enableTimeoutDetection；false 时每步超时不生效）</summary>
+        [ObservableProperty] private bool _enableTimeoutDetection = true;
+        /// <summary>本流程使用的根级模型路径（写入 YAML sop.model.path；为空则运行时回退到通用 COCO 模型）</summary>
+        [ObservableProperty] private string _sopModelPath = "";
 
     /// <summary>第①步定义的区域名称预设（英文标识）</summary>
     [ObservableProperty] private ObservableCollection<string> _regionPresets = new();
@@ -129,6 +131,20 @@ public partial class SopWizardViewModel : ObservableObject
     private List<ModelOptionItem>? _modelOptionsCache;
     /// <summary>动作编辑器中"模型"下拉的数据源（扫描 yolo_models 目录下的 .onnx 文件）</summary>
     public List<ModelOptionItem> ModelOptions => _modelOptionsCache ??= BuildModelOptions();
+
+    /// <summary>第①步"本流程模型"下拉数据源（含"默认通用 COCO 模型"空选项）</summary>
+    public List<ModelOptionItem> SopModelOptions
+    {
+        get
+        {
+            var list = new List<ModelOptionItem>
+            {
+                new ModelOptionItem { Display = "（默认：通用 COCO 模型）", Value = "" }
+            };
+            list.AddRange(ModelOptions);
+            return list;
+        }
+    }
 
     /// <summary>
     /// 构建相机下拉：主相机 + 最多 4 路（cam_2..cam_4），已注册槽位显示其名称。
@@ -388,6 +404,7 @@ public partial class SopWizardViewModel : ObservableObject
             Description = SopDescription,
             IncludePersonEntry = IncludePersonEntry,
             EnableTimeoutDetection = EnableTimeoutDetection,
+            SopModelPath = SopModelPath,
             RegionPresets = RegionPresets.ToList(),
             ObjectPresets = ObjectPresets.ToList()
         };

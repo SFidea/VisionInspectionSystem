@@ -151,6 +151,8 @@ public class SOPGlobalSettings
     public bool EnableSkipDetection { get; set; } = true;
     public bool EnableTimeoutDetection { get; set; } = true;
     public int StableFrameCount { get; set; } = 5;
+    /// <summary>全局检测置信度阈值（来自 YAML settings.confidenceThreshold；P0-3 接线，原死参数）</summary>
+    public float ConfidenceThreshold { get; set; } = 0.6f;
     public float PositionTolerance { get; set; } = 20f;
     public bool AutoResetOnComplete { get; set; } = true;
     public int ResetDelaySec { get; set; } = 1;

@@ -88,6 +88,20 @@ public static class SopYamlGenerator
             }
         };
 
+        // P0-1: 写入根级模型（sop.model）；为空则运行时不切换模型，回退通用 COCO。
+        // 这是 wizard 自定义类别能被检出的关键——否则 workflow.Model 为 null，
+        // 全局模型切换被跳过，永远跑 COCO 80 类。
+        if (!string.IsNullOrWhiteSpace(input.SopModelPath))
+        {
+            sop.Model = new SopyamlModel
+            {
+                Path = input.SopModelPath.Trim(),
+                Type = "ObjectDetection",
+                Confidence = 0.6f,
+                Iou = 0.45f
+            };
+        }
+
         return new SOPYamlConfig { Sop = sop };
     }
 

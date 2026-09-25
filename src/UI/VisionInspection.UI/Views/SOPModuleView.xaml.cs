@@ -1369,6 +1369,29 @@ namespace VisionInspection.UI.Views
                         LoadStepsFromYaml(configWindow.SavedYamlPath);
                         _currentYamlPath = configWindow.SavedYamlPath;
                         AddLog($"SOP流程已修改并重载: {System.IO.Path.GetFileName(_currentYamlPath)}");
+
+                        var vm = GetMainViewModel();
+
+                        // P4-2: 同步到主视图的启动路径，使「运行」按钮加载的是新配方
+                        // （对照 MainViewModel.RecipeComboBox_SelectionChanged 的同步逻辑，
+                        //  配置窗口原只设 _currentYamlPath 却漏同步，导致"另存为"后运行仍加载旧配方）
+                        if (vm != null)
+                            vm.SopWorkflowPath = _currentYamlPath;
+
+                        // P4-1: SOP 正在运行时，热重载配置到运行中的 SOPModule（复用复位同款的状态机重启路径，不重启相机线程）。
+                        // 否则运行中改超时/区域/模型界面看着变了，实际跑的还是旧 workflow，必须停止再启动。
+                        if (vm != null && vm.IsSOPDetecting && vm.SOPModuleInstance != null)
+                        {
+                            try
+                            {
+                                vm.SOPModuleInstance.StartWorkflowFromYaml(_currentYamlPath);
+                                AddLog($"SOP 运行中已热重载配置: {System.IO.Path.GetFileName(_currentYamlPath)}");
+                            }
+                            catch (Exception ex)
+                            {
+                                AddLog($"运行中热重载失败（请先停止 SOP 再启动以应用）: {ex.Message}");
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {
