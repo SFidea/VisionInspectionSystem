@@ -2,6 +2,7 @@ using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -25,6 +26,8 @@ namespace VisionInspection.UI.Views
         private bool _isLoading;             // 程序填充控件时屏蔽事件
         private bool _hadModel;              // 原配置是否存在 model 节点
         private bool _hadMonitoring;         // 原配置是否存在 monitoring 节点
+        private SopyamlCrossCamera? _crossConfig;   // 跨相机规则（镜像 _config.Sop.CrossCamera）
+        private SopyamlCrossRule? _selectedCrossRule;
 
         /// <summary>保存成功后最终写入的 YAML 路径（供调用方重载工作流）</summary>
         public string? SavedYamlPath { get; private set; }
@@ -237,6 +240,7 @@ namespace VisionInspection.UI.Views
             {
                 LoadFlowInfoTab();
                 LoadModelMonitoringTab();
+                LoadCrossCameraTab();
                 RefreshRegionsPanel();
                 RefreshStepsList();
                 var sop = _config.Sop ?? new SopyamlSop();
@@ -503,6 +507,8 @@ namespace VisionInspection.UI.Views
 
             ForbiddenTextBox.Text = string.Join(", ", step.ForbiddenObjects ?? new List<string>());
             MustKeepTextBox.Text = string.Join(", ", step.MustKeep ?? new List<string>());
+            RequiredObjectsTextBox.Text = FormatRequiredObjects(step.RequiredObjects);
+            StandardDurationMsTextBox.Text = step.StandardDurationMs.ToString();
 
             // ⭐ 步骤级 Modbus 违规触发
             var mt = step.ModbusTrigger;
@@ -564,6 +570,8 @@ namespace VisionInspection.UI.Views
             DetectionDescTextBox.Text = "";
             ForbiddenTextBox.Text = "";
             MustKeepTextBox.Text = "";
+            RequiredObjectsTextBox.Text = "";
+            StandardDurationMsTextBox.Text = "";
             // ⭐ 步骤级 Modbus 触发复位为默认
             ModbusTriggerCheckBox.IsChecked = false;
             SelectModbusAddress(0);
@@ -623,6 +631,8 @@ namespace VisionInspection.UI.Views
 
             step.ForbiddenObjects = SplitList(ForbiddenTextBox.Text);
             step.MustKeep = SplitList(MustKeepTextBox.Text);
+            step.RequiredObjects = ParseRequiredObjects(RequiredObjectsTextBox.Text);
+            step.StandardDurationMs = int.TryParse(StandardDurationMsTextBox.Text, out var sd) ? Math.Max(0, sd) : 0;
 
             // ⭐ 步骤级 Modbus 违规触发（仅在启用时写入；未启用则清空节点）
             if (ModbusTriggerCheckBox.IsChecked == true)
@@ -915,6 +925,135 @@ namespace VisionInspection.UI.Views
             }
         }
 
+        // ==================== 跨相机协同规则 Tab ====================
+
+        private void LoadCrossCameraTab()
+        {
+            var sop = _config?.Sop;
+            _crossConfig = sop?.CrossCamera;
+            CrossEnabledCheckBox.IsChecked = _crossConfig != null;
+            CrossCooldownTextBox.Text = (_crossConfig?.CooldownSeconds ?? 5).ToString("0.##");
+            CrossRuleListBox.ItemsSource = _crossConfig?.Rules ?? new List<SopyamlCrossRule>();
+            CrossRuleDetailPanel.IsEnabled = _crossConfig != null;
+            _selectedCrossRule = null;
+            ClearCrossRuleDetail();
+        }
+
+        private void ApplyCrossCameraTab()
+        {
+            var sop = _config?.Sop;
+            if (sop == null) return;
+
+            // 先把正在编辑的 DataGrid 单元格提交到绑定对象
+            try { CrossConditionGrid.CommitEdit(DataGridEditingUnit.Row, true); } catch { }
+            try { CrossConditionGrid.CancelEdit(); } catch { }
+
+            if (CrossEnabledCheckBox.IsChecked != true)
+            {
+                sop.CrossCamera = null;
+                return;
+            }
+
+            if (_crossConfig == null)
+                _crossConfig = new SopyamlCrossCamera();
+            sop.CrossCamera = _crossConfig;
+
+            // 回写当前选中规则的明细字段（用户可能只改了文本框未切选项）
+            if (_selectedCrossRule != null)
+            {
+                _selectedCrossRule.Id = string.IsNullOrWhiteSpace(CrossRuleIdTextBox.Text)
+                    ? _selectedCrossRule.Id : CrossRuleIdTextBox.Text.Trim();
+                _selectedCrossRule.Name = string.IsNullOrWhiteSpace(CrossRuleNameTextBox.Text)
+                    ? _selectedCrossRule.Name : CrossRuleNameTextBox.Text.Trim();
+                if (int.TryParse(CrossRuleSeverityTextBox.Text, out var sev)) _selectedCrossRule.Severity = sev;
+            }
+            if (double.TryParse(CrossCooldownTextBox.Text, out var cd)) _crossConfig.CooldownSeconds = cd;
+        }
+
+        private void ClearCrossRuleDetail()
+        {
+            CrossRuleIdTextBox.Text = "";
+            CrossRuleNameTextBox.Text = "";
+            CrossRuleSeverityTextBox.Text = "";
+            CrossConditionGrid.ItemsSource = null;
+        }
+
+        private void CrossEnabledCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            bool enabled = CrossEnabledCheckBox.IsChecked == true;
+            if (enabled)
+            {
+                if (_crossConfig == null)
+                {
+                    _crossConfig = _config!.Sop!.CrossCamera = new SopyamlCrossCamera();
+                }
+                CrossCooldownTextBox.Text = _crossConfig.CooldownSeconds.ToString("0.##");
+                CrossRuleListBox.ItemsSource = _crossConfig.Rules;
+                CrossRuleDetailPanel.IsEnabled = true;
+            }
+            else
+            {
+                CrossRuleDetailPanel.IsEnabled = false;
+                _selectedCrossRule = null;
+                ClearCrossRuleDetail();
+            }
+        }
+
+        private void CrossRuleListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            _selectedCrossRule = CrossRuleListBox.SelectedItem as SopyamlCrossRule;
+            if (_selectedCrossRule == null) { ClearCrossRuleDetail(); return; }
+            CrossRuleIdTextBox.Text = _selectedCrossRule.Id ?? "";
+            CrossRuleNameTextBox.Text = _selectedCrossRule.Name ?? "";
+            CrossRuleSeverityTextBox.Text = _selectedCrossRule.Severity.ToString();
+            // 直接绑定共享实例（DataGrid 编辑会就地修改 Conditions 中的对象）
+            CrossConditionGrid.ItemsSource = _selectedCrossRule.Conditions;
+        }
+
+        private void CrossAddRuleButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_crossConfig == null) return;
+            var rule = new SopyamlCrossRule
+            {
+                Id = $"rule_{_crossConfig.Rules.Count + 1}",
+                Name = $"规则{_crossConfig.Rules.Count + 1}",
+                Severity = 1,
+                Conditions = new List<SopyamlCrossCondition>()
+            };
+            _crossConfig.Rules.Add(rule);
+            CrossRuleListBox.ItemsSource = null;
+            CrossRuleListBox.ItemsSource = _crossConfig.Rules;
+            CrossRuleListBox.SelectedItem = rule;
+        }
+
+        private void CrossDelRuleButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_crossConfig == null || _selectedCrossRule == null) return;
+            _crossConfig.Rules.Remove(_selectedCrossRule);
+            _selectedCrossRule = null;
+            CrossRuleListBox.ItemsSource = null;
+            CrossRuleListBox.ItemsSource = _crossConfig.Rules;
+            ClearCrossRuleDetail();
+        }
+
+        private void CrossAddCondButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedCrossRule == null) return;
+            _selectedCrossRule.Conditions.Add(new SopyamlCrossCondition());
+            CrossConditionGrid.ItemsSource = null;
+            CrossConditionGrid.ItemsSource = _selectedCrossRule.Conditions;
+        }
+
+        private void CrossDelCondButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedCrossRule == null) return;
+            var cond = CrossConditionGrid.SelectedItem as SopyamlCrossCondition;
+            if (cond == null) return;
+            _selectedCrossRule.Conditions.Remove(cond);
+            CrossConditionGrid.ItemsSource = null;
+            CrossConditionGrid.ItemsSource = _selectedCrossRule.Conditions;
+        }
+
         // ==================== 保存 ====================
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
@@ -987,6 +1126,7 @@ namespace VisionInspection.UI.Views
             ApplyEditorToStep();
             ApplyFlowInfoTab();
             ApplyModelMonitoringTab();
+            ApplyCrossCameraTab();
         }
 
         private void CloseButton_Click(object sender, RoutedEventArgs e)
@@ -1051,6 +1191,56 @@ namespace VisionInspection.UI.Views
                 .Where(s => s.Length > 0)
                 .ToList();
             return items.Count > 0 ? items : null;
+        }
+
+        // ==================== required_objects 文本 <-> 模型 ====================
+
+        private static string FormatRequiredObjects(List<SopyamlRequiredObject>? list)
+        {
+            if (list == null || list.Count == 0) return "";
+            var sb = new StringBuilder();
+            foreach (var o in list)
+            {
+                var line = o.Object ?? "";
+                if (!string.IsNullOrWhiteSpace(o.Zone)) line += "," + o.Zone;
+                if (Math.Abs(o.MinConfidence - 0.5f) > 1e-6)
+                    line += ":" + o.MinConfidence.ToString("0.##");
+                sb.AppendLine(line);
+            }
+            return sb.ToString();
+        }
+
+        private static List<SopyamlRequiredObject>? ParseRequiredObjects(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+            var list = new List<SopyamlRequiredObject>();
+            foreach (var raw in (text ?? "").Replace("\r\n", "\n").Split('\n'))
+            {
+                var line = raw.Trim();
+                if (line.Length == 0) continue;
+                // 格式：物体名[,区域ID][:最小置信度]
+                var parts = line.Split(',', 2);
+                var obj = new SopyamlRequiredObject { Object = parts[0].Trim() };
+                if (parts.Length > 1)
+                {
+                    var rest = parts[1].Trim();
+                    var ci = rest.IndexOf(':');
+                    if (ci >= 0)
+                    {
+                        var zonePart = rest.Substring(0, ci).Trim();
+                        if (zonePart.Length > 0) obj.Zone = zonePart;
+                        var confPart = rest.Substring(ci + 1).Trim();
+                        if (float.TryParse(confPart, out var c)) obj.MinConfidence = c;
+                    }
+                    else
+                    {
+                        obj.Zone = rest;
+                    }
+                }
+                if (string.IsNullOrWhiteSpace(obj.Object)) continue;
+                list.Add(obj);
+            }
+            return list.Count > 0 ? list : null;
         }
 
         // ==================== 运行时手部检测设置 ====================

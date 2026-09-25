@@ -224,11 +224,17 @@
                             <TextBlock Text="检测条件描述（可选）" Style="{StaticResource FieldLabel}"/>
                             <TextBox x:Name="DetectionDescTextBox" Height="46" Padding="8,6" TextWrapping="Wrap"/>
 
+                            <TextBlock Text="步骤标准耗时（standard_duration_ms，毫秒；0=未设定则回退 detection.duration_ms，用于数据看板对比）" Style="{StaticResource FieldLabel}" Margin="0,12,0,0"/>
+                            <TextBox x:Name="StandardDurationMsTextBox" Style="{StaticResource FieldInput}"/>
+
                             <TextBlock Text="违规防护" Style="{StaticResource SectionHeader}" Margin="0,18,0,5"/>
                             <TextBlock Text="禁止出现物体（forbidden_objects，逗号分隔）" Style="{StaticResource FieldLabel}"/>
                             <TextBox x:Name="ForbiddenTextBox" Style="{StaticResource FieldInput}"/>
                             <TextBlock Text="必须保持物体（must_keep，逗号分隔）" Style="{StaticResource FieldLabel}"/>
                             <TextBox x:Name="MustKeepTextBox" Style="{StaticResource FieldInput}"/>
+                            <TextBlock Text="必放物料（required_objects，每行一项；格式：物体名[,区域ID][:最小置信度]）" Style="{StaticResource FieldLabel}" Margin="0,8,0,0"/>
+                            <TextBlock Text="示例：cap  或  screw,zone_a  或  cap,zone_b:0.6 —— 最终校验步声明必放物料，任意一项缺失即判漏放（MissingRequiredObject）" Style="{StaticResource HintText}" Margin="0,0,0,4"/>
+                            <TextBox x:Name="RequiredObjectsTextBox" Height="72" Padding="8,6" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
 
                             <!-- ⭐ 步骤级 Modbus 违规触发（功能码 06：写单个寄存器 Y1-Y8） -->
                             <TextBlock Text="Modbus 违规触发" Style="{StaticResource SectionHeader}" Margin="0,18,0,5"/>
@@ -441,6 +447,82 @@
                             <Button x:Name="AdvancedParamsButton" Content="⚙️ 手部检测高级参数（平滑/面部过滤/结构验证）"
                                     HorizontalAlignment="Left" Padding="14,7" Margin="0,18,0,0"
                                     Click="AdvancedParamsButton_Click"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <!-- Tab: 跨相机协同规则 -->
+                <TabItem Header="跨相机规则">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="15,10,15,15">
+                            <TextBlock Text="跨相机协同规则（cross_camera）" Style="{StaticResource SectionHeader}"/>
+                            <TextBlock Text="多相机分别检测后，按规则组合报警（命中即播放 ng.wav 并写入日志）。仅当勾选启用时才写入该节点。" Style="{StaticResource HintText}" Margin="0,0,0,8"/>
+                            <CheckBox x:Name="CrossEnabledCheckBox" Content="启用跨相机协同规则（enabled）" Margin="0,0,0,10"
+                                      Checked="CrossEnabledCheckBox_Changed" Unchecked="CrossEnabledCheckBox_Changed"/>
+                            <StackPanel Orientation="Horizontal">
+                                <StackPanel Width="200">
+                                    <TextBlock Text="报警冷却秒（cooldown_seconds）" Style="{StaticResource FieldLabel}"/>
+                                    <TextBox x:Name="CrossCooldownTextBox" Style="{StaticResource FieldInput}"/>
+                                </StackPanel>
+                            </StackPanel>
+
+                            <Grid Margin="0,14,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="12"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- 左：规则列表 -->
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="规则列表（rules）" Style="{StaticResource FieldLabel}"/>
+                                    <ListBox x:Name="CrossRuleListBox" Height="240" DisplayMemberPath="Name"
+                                             SelectionChanged="CrossRuleListBox_SelectionChanged"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <Button x:Name="CrossAddRuleButton" Content="➕ 新增规则" Padding="10,5" Margin="0,0,8,0" Click="CrossAddRuleButton_Click"/>
+                                        <Button x:Name="CrossDelRuleButton" Content="🗑 删除规则" Padding="10,5" Click="CrossDelRuleButton_Click"/>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <!-- 右：选中规则的明细 -->
+                                <StackPanel Grid.Column="2" x:Name="CrossRuleDetailPanel" IsEnabled="False">
+                                    <TextBlock Text="规则明细" Style="{StaticResource FieldLabel}"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="12"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="规则 ID（id）" Style="{StaticResource FieldLabel}"/>
+                                            <TextBox x:Name="CrossRuleIdTextBox" Style="{StaticResource FieldInput}"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="严重级别（severity）" Style="{StaticResource FieldLabel}"/>
+                                            <TextBox x:Name="CrossRuleSeverityTextBox" Style="{StaticResource FieldInput}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock Text="规则名称（name）" Style="{StaticResource FieldLabel}" Margin="0,8,0,0"/>
+                                    <TextBox x:Name="CrossRuleNameTextBox" Style="{StaticResource FieldInput}"/>
+
+                                    <TextBlock Text="触发条件（conditions，全部满足才命中）" Style="{StaticResource FieldLabel}" Margin="0,12,0,4"/>
+                                    <DataGrid x:Name="CrossConditionGrid" Height="190" AutoGenerateColumns="False"
+                                              CanUserAddRows="False" CanUserDeleteRows="False"
+                                              SelectionMode="Single" Margin="0,0,0,6">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="相机ID" Binding="{Binding Camera}" Width="*"/>
+                                            <DataGridTextColumn Header="区域ID" Binding="{Binding Region}" Width="*"/>
+                                            <DataGridTextColumn Header="类别" Binding="{Binding Object}" Width="*"/>
+                                            <DataGridCheckBoxColumn Header="出现触发" Binding="{Binding Present}" Width="Auto"/>
+                                            <DataGridTextColumn Header="最小置信度" Binding="{Binding MinConfidence}" Width="Auto"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="CrossAddCondButton" Content="➕ 新增条件" Padding="10,5" Margin="0,0,8,0" Click="CrossAddCondButton_Click"/>
+                                        <Button x:Name="CrossDelCondButton" Content="🗑 删除条件" Padding="10,5" Click="CrossDelCondButton_Click"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
                         </StackPanel>
                     </ScrollViewer>
                 </TabItem>
