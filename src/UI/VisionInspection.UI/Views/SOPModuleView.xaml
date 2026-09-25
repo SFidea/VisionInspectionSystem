@@ -6,13 +6,13 @@
              xmlns:local="clr-namespace:VisionInspection.UI.Views"
              xmlns:hc="https://handyorg.github.io/handycontrol"
              mc:Ignorable="d" 
-             d:DesignHeight="600" d:DesignWidth="400">
+             d:DesignHeight="600" d:DesignWidth="400"
+             Loaded="SOPModuleView_Loaded">
     <Grid Background="White">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="2*"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
@@ -32,16 +32,29 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <!-- 顶部操作工具栏：标定 / 配置 / 运行 -->
-                <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,0,5,5">
-                    <Button x:Name="RegionButton" Content="🎯 标定区域" Margin="5,0" Padding="10,0"
+                <!-- 顶部操作工具栏：标定 / 配置 / 运行 / 复位 / 日志
+                     用 WrapPanel：右侧面板较窄时按钮自动换行，不会互相挤压或裁切 -->
+                <WrapPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,0,5,5">
+                    <Button x:Name="RegionButton" Content="🎯 标定" Margin="4,0" Padding="8,0"
+                            ToolTip="标定 SOP 检测区域"
                             Click="RegionButton_Click" Height="30"/>
-                    <Button x:Name="ConfigButton" Content="⚙️ 配置" Margin="5,0" Padding="10,5"
+                    <Button x:Name="ConfigButton" Content="⚙️ 配置" Margin="4,0" Padding="8,5"
+                            ToolTip="编辑当前配方步骤与检测参数"
                             Click="ConfigButton_Click" Height="30"/>
-                    <Button x:Name="RunButton" Content="▶️ 运行" Margin="5,0" Padding="10,5"
+                    <Button x:Name="RunButton" Content="▶️ 运行" Margin="4,0" Padding="8,5"
                             Background="#52C41A" Foreground="White"
+                            ToolTip="启动 / 停止 SOP 实时检测"
                             Click="RunButton_Click" Height="30"/>
-                </StackPanel>
+                    <!-- ⭐ 复位：紧邻「运行」右侧，用于清除当前周期结果、把流程复位到第一步 -->
+                    <Button x:Name="ResetButton" Content="🔄 复位" Margin="4,0" Padding="8,5"
+                            Background="#FA8C16" Foreground="White"
+                            ToolTip="停止检测并将 SOP 流程复位到第一步（清空步骤状态与耗时）"
+                            Click="ResetButton_Click" Height="30"/>
+                    <!-- ⭐ 运行日志已移至独立窗口 -->
+                    <Button x:Name="LogButton" Content="📝 日志" Margin="4,0" Padding="8,5"
+                            ToolTip="打开独立运行日志窗口"
+                            Click="LogButton_Click" Height="30"/>
+                </WrapPanel>
 
                 <!-- 配方栏 -->
                 <Grid Grid.Row="1">
@@ -111,32 +124,14 @@
             </Grid>
         </Border>
 
-        <!-- 检测流程列表 - 垂直列表布局 -->
+        <!-- 检测流程列表 - 垂直列表布局（右侧区域全部让给 SOP 流程；
+             运行日志已移至独立窗口 SopLogWindow，此处不再占用高度） -->
         <Border Grid.Row="3" BorderBrush="#E8E8E8" BorderThickness="0,0,0,1">
             <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
                 <StackPanel x:Name="StepsPanel" Orientation="Vertical" Margin="5">
                     <!-- 步骤项将通过代码动态添加 -->
                 </StackPanel>
             </ScrollViewer>
-        </Border>
-
-        <!-- 步骤耗时已合并到上方流程卡片，此处不再显示独立时间轴 -->
-
-        <!-- 日志输出 -->
-        <Border Grid.Row="4" BorderBrush="#E8E8E8" BorderThickness="0,1,0,0">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-                <Border Background="#FAFAFA" Padding="10,5">
-                    <TextBlock Text="📝 运行日志" FontSize="12" Foreground="#666" FontWeight="Medium"/>
-                </Border>
-                <TextBox x:Name="LogTextBox" Grid.Row="1" IsReadOnly="True" 
-                        VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"
-                        BorderThickness="0" Background="Transparent" Padding="10,5"
-                        FontFamily="Consolas" FontSize="11"/>
-            </Grid>
         </Border>
     </Grid>
 </UserControl>

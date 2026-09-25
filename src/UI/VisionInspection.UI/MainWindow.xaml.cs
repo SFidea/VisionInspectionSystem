@@ -76,6 +76,38 @@ public partial class MainWindow : Window
 
         // 将当前登录用户同步给 SOP 模块（记录操作人，供数据看板按用户过滤）
         SyncCurrentOperator();
+
+        // ⭐ 订阅 Modbus 状态并刷新底部状态栏；首次连接失败弹一次提示
+        WireModbusStatus();
+    }
+
+    /// <summary>
+    /// 订阅 ModbusService 状态变化并刷新底部状态栏；首次连接失败仅提示一次。
+    /// </summary>
+    private void WireModbusStatus()
+    {
+        UpdateModbusStatusBar(ModbusService.Instance.Status);
+        ModbusService.Instance.StatusChanged += (s, status) => UpdateModbusStatusBar(status);
+        ModbusService.Instance.FirstConnectionFailed += (s, _) =>
+        {
+            Dispatcher.Invoke(() =>
+                MessageBox.Show("Modbus 未连接，程序将在后台持续尝试自动重连。\n可在「配置 → 通信设置」中检查 IP/COM 与从站地址。",
+                    "Modbus 连接提示", MessageBoxButton.OK, MessageBoxImage.Information));
+        };
+    }
+
+    private void UpdateModbusStatusBar(ModbusConnectionStatus status)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            (ModbusStatusDot.Fill, ModbusStatusText.Text) = status switch
+            {
+                ModbusConnectionStatus.Connected => (Brushes.LimeGreen, "Modbus: 已连接"),
+                ModbusConnectionStatus.Connecting => (Brushes.Orange, "Modbus: 连接中..."),
+                ModbusConnectionStatus.Error => (Brushes.Red, "Modbus: 连接错误"),
+                _ => (Brushes.Gray, "Modbus: 未连接")
+            };
+        });
     }
 
     private void UpdateMenuByPermission()
@@ -253,11 +285,24 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// 运行日志菜单点击：打开独立运行日志窗口（与 SOP 面板上的「📝 日志」同一实例）
+    /// </summary>
+    private void SopLogMenuItem_Click(object sender, RoutedEventArgs e) => SopLogWindow.ShowWindow();
+
+    /// <summary>
     /// 通信设置菜单点击
     /// </summary>
     private void CommunicationConfigMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        MessageBox.Show("通信设置功能开发中...", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+        if (!_userManager.HasPermission(Permissions.CameraConfig) && !_userManager.HasPermission(Permissions.PLCConfig))
+        {
+            MessageBox.Show("您没有权限访问通信设置", "权限不足", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var window = new CommunicationConfigWindow(_userManager);
+        window.Owner = this;
+        window.ShowDialog();
     }
 
     /// <summary>

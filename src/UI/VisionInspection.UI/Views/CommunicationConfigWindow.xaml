@@ -1,0 +1,175 @@
+<Window x:Class="VisionInspection.UI.Views.CommunicationConfigWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:VisionInspection.UI.Views"
+        mc:Ignorable="d"
+        Icon="/Assets/AppIcon.ico"
+        Title="通信设置 - Modbus" Height="760" Width="720"
+        MinWidth="680" MinHeight="560"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize">
+    <Grid Background="#F5F5F5">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 标题 -->
+        <Border Grid.Row="0" Background="White" BorderBrush="#E8E8E8" BorderThickness="0,0,0,1" Padding="20,12">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="🔌" FontSize="22" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="通信设置（Modbus）" FontSize="16" FontWeight="Bold"/>
+                    <TextBlock Text="支持 Modbus TCP 与 串口 RTU；功能码 03 读 X1-X8、06 写 Y1-Y8"
+                               FontSize="11" Foreground="#999" Margin="0,2,0,0"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="15">
+            <StackPanel>
+                <!-- 连接状态 -->
+                <Border Background="White" CornerRadius="6" Padding="14,10" Margin="0,0,0,12">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse x:Name="StatusDot" Width="12" Height="12" Fill="Gray" Margin="0,0,8,0"/>
+                        <TextBlock x:Name="StatusText" Text="未连接" FontWeight="Bold" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="ModeText" Text="" Foreground="#999" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 连接模式 -->
+                <Border Background="White" CornerRadius="6" Padding="14,12" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="连接模式" FontWeight="Bold" FontSize="13" Margin="0,0,0,8"/>
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton x:Name="TcpRadio" Content="Modbus TCP（IP + 端口）" GroupName="Mode" Margin="0,0,20,0" Checked="ModeRadio_Changed"/>
+                            <RadioButton x:Name="RtuRadio" Content="串口 RTU（COM + 波特率）" GroupName="Mode" Checked="ModeRadio_Changed"/>
+                        </StackPanel>
+
+                        <!-- TCP 参数 -->
+                        <Grid x:Name="TcpPanel" Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="12"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="IP 地址" FontSize="12" Foreground="#666" Margin="0,0,0,4"/>
+                                <TextBox x:Name="IpTextBox" Height="30" Padding="8,0" VerticalContentAlignment="Center"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="端口（默认 502）" FontSize="12" Foreground="#666" Margin="0,0,0,4"/>
+                                <TextBox x:Name="PortTextBox" Height="30" Padding="8,0" VerticalContentAlignment="Center"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- RTU 参数 -->
+                        <Grid x:Name="RtuPanel" Margin="0,12,0,0" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="12"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Column="0" Grid.Row="0">
+                                <TextBlock Text="串口号（自动扫描，可手动输入）" FontSize="12" Foreground="#666" Margin="0,0,0,4"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox x:Name="ComComboBox" Grid.Column="0" Height="30"
+                                              IsEditable="True" VerticalContentAlignment="Center"
+                                              ToolTip="列出本机可用串口；也支持直接输入（如 COM12）"
+                                              DropDownOpened="ComComboBox_DropDownOpened"/>
+                                    <Button x:Name="ScanComButton" Grid.Column="1" Content="🔄" Width="36" Height="30"
+                                            Margin="6,0,0,0" Padding="0" ToolTip="重新扫描串口设备"
+                                            Click="ScanComButton_Click"/>
+                                </Grid>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Grid.Row="0">
+                                <TextBlock Text="波特率（如 9600）" FontSize="12" Foreground="#666" Margin="0,0,0,4"/>
+                                <TextBox x:Name="BaudTextBox" Height="30" Padding="8,0" VerticalContentAlignment="Center"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="0" Grid.Row="1" Margin="0,10,0,0">
+                                <TextBlock Text="校验位" FontSize="12" Foreground="#666" Margin="0,0,0,4"/>
+                                <ComboBox x:Name="ParityCombo" Height="30" VerticalContentAlignment="Center">
+                                    <ComboBoxItem Content="None" Tag="None" IsSelected="True"/>
+                                    <ComboBoxItem Content="Odd" Tag="Odd"/>
+                                    <ComboBoxItem Content="Even" Tag="Even"/>
+                                </ComboBox>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Grid.Row="1" Margin="0,10,0,0">
+                                <TextBlock Text="数据位 / 停止位" FontSize="12" Foreground="#666" Margin="0,0,0,4"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBox x:Name="DataBitsTextBox" Width="60" Height="30" Padding="8,0" VerticalContentAlignment="Center" Text="8"/>
+                                    <TextBlock Text="/" VerticalAlignment="Center" Margin="6,0"/>
+                                    <ComboBox x:Name="StopBitsCombo" Width="70" Height="30" VerticalContentAlignment="Center">
+                                        <ComboBoxItem Content="1" Tag="1" IsSelected="True"/>
+                                        <ComboBoxItem Content="1.5" Tag="1.5"/>
+                                        <ComboBoxItem Content="2" Tag="2"/>
+                                    </ComboBox>
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- 通用参数 -->
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="12"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="从站地址（Slave ID，默认 1）" FontSize="12" Foreground="#666" Margin="0,0,0,4"/>
+                                <TextBox x:Name="SlaveTextBox" Height="30" Padding="8,0" VerticalContentAlignment="Center"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="重连间隔（毫秒，默认 3000）" FontSize="12" Foreground="#666" Margin="0,0,0,4"/>
+                                <TextBox x:Name="ReconnectTextBox" Height="30" Padding="8,0" VerticalContentAlignment="Center"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <CheckBox x:Name="AutoConnectCheckBox" Content="程序启动默认连接并自动重连" Margin="0,12,0,0" IsChecked="True"/>
+                        <Button x:Name="TestButton" Content="🔗 测试连接" HorizontalAlignment="Left" Padding="14,7" Margin="0,12,0,0" Click="TestButton_Click"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 实时输入 X1-X8 -->
+                <Border Background="White" CornerRadius="6" Padding="14,12" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="实时输入监控（功能码 03：保持寄存器 X1-X8）" FontWeight="Bold" FontSize="13" Margin="0,0,0,4"/>
+                        <TextBlock Text="X1 上升沿作为 SOP 采集触发信号" FontSize="11" Foreground="#999" Margin="0,0,0,8"/>
+                        <UniformGrid x:Name="InputsGrid" Columns="4" Rows="2"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 锁存复位 -->
+                <Border Background="White" CornerRadius="6" Padding="14,12">
+                    <StackPanel>
+                        <TextBlock Text="锁存输出复位（需管理员权限）" FontWeight="Bold" FontSize="13" Margin="0,0,0,4"/>
+                        <TextBlock Text="违规触发若设为「锁存」，输出保持为 1 直到管理员复位。" FontSize="11" Foreground="#999" Margin="0,0,0,8"/>
+                        <WrapPanel x:Name="LatchGrid"/>
+                        <Button x:Name="ResetAllButton" Content="🔓 复位全部锁存" HorizontalAlignment="Left" Padding="14,7" Margin="0,10,0,0" Click="ResetAllButton_Click"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- 底部 -->
+        <Border Grid.Row="2" Background="White" BorderBrush="#E8E8E8" BorderThickness="0,1,0,0" Padding="20,10">
+            <Grid>
+                <TextBlock Text="点「保存」立即生效并持久化，下次启动按此参数自动连接（已记住上次连接参数）" Foreground="#999" FontSize="11" VerticalAlignment="Center"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button x:Name="SaveButton" Content="💾 保存" Margin="0,0,8,0" Padding="16,7" Background="#1890FF" Foreground="White" Click="SaveButton_Click"/>
+                    <Button Content="❌ 关闭" Padding="18,7" Click="CloseButton_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

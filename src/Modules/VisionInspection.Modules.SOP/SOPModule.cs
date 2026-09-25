@@ -25,6 +25,7 @@ public class SOPModule : IDetectionModule
     private Yolo? _yolo;
     private SOPStateMachine? _stateMachine;
     private SOPWorkflow? _currentWorkflow;
+    private bool _x1TriggerSubscribed;
     private readonly object _lockObject = new();
 
     // 静态锁，确保手部姿态估计服务只初始化一次
@@ -702,6 +703,51 @@ public class SOPModule : IDetectionModule
         {
             SOPStateChanged?.Invoke(this, e);
         };
+
+        // ⭐ 步骤完成后若发生违规，触发 Modbus 功能码 06（写单个寄存器 Y1-Y8）
+        _stateMachine.StepCompleted += (s, e) =>
+        {
+            if (e.HasViolations)
+                FireModbusTriggerForStep(e.Step);
+        };
+
+        // ⭐ X1（寄存器 0）上升沿作为 SOP 采集触发：空闲时启动已加载的工作流。
+        // ModbusService 为单例，此处仅订阅一次，避免模块重复初始化时叠加处理函数。
+        if (!_x1TriggerSubscribed)
+        {
+            _x1TriggerSubscribed = true;
+            ModbusService.Instance.X1Trigger += (s, e) =>
+            {
+                try
+                {
+                    if (_stateMachine?.CurrentState == SOPExecutionState.Idle && _currentWorkflow != null)
+                        StartWorkflow(_currentWorkflow);
+                }
+                catch (Exception ex)
+                {
+                    Log($"[Modbus] X1 采集触发启动失败: {ex.Message}");
+                }
+            };
+        }
+    }
+
+    /// <summary>
+    /// 步骤违规触发 Modbus 06 写单个寄存器（Y1-Y8）。
+    /// </summary>
+    private void FireModbusTriggerForStep(SOPStep step)
+    {
+        var cfg = step.ModbusTrigger;
+        if (cfg == null || !cfg.Enabled) return;
+        try
+        {
+            ModbusService.Instance.TriggerOutput(cfg.Address, cfg.PulseMs, cfg.Latch);
+            var mode = cfg.Latch ? "锁存(需管理员复位)" : $"脉宽 {cfg.PulseMs}ms";
+            Log($"[Modbus] 步骤「{step.StepName}」违规触发 06 → Y{cfg.Address + 1} ({mode})");
+        }
+        catch (Exception ex)
+        {
+            Log($"[Modbus] 违规触发失败: {ex.Message}");
+        }
     }
 
     private void OnDetectionModeChanged()

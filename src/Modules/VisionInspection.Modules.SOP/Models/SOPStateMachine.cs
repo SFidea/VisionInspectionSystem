@@ -31,6 +31,8 @@ public class SOPStateMachine
     public event EventHandler<ViolationEventArgs>? ViolationDetected;
     public event EventHandler<SOPCompletedEventArgs>? WorkflowCompleted;
     public event EventHandler<StateChangedEventArgs>? StateChanged;
+    /// <summary>单个步骤完成事件；HasViolations 指示该步是否伴随违规，供 Modbus 06 触发判断。</summary>
+    public event EventHandler<StepCompletedEventArgs>? StepCompleted;
 
     public SOPStateMachine(IReadOnlyList<ZoneDefinition>? zones = null)
     {
@@ -269,6 +271,10 @@ public class SOPStateMachine
         };
         _stepHistory.Add(record);
 
+        // ⭐ 该步是否伴随违规（供 Modbus 06 触发判断）
+        var stepHadViolation = _violations.Any(v => v.StepId == CurrentStepId);
+        StepCompleted?.Invoke(this, new StepCompletedEventArgs(currentStep, stepHadViolation));
+
         // 检查是否完成所有步骤
         if (CurrentStepId >= _workflow.Steps.Max(s => s.StepId))
         {
@@ -470,5 +476,20 @@ public class StateChangedEventArgs : EventArgs
     {
         OldState = oldState;
         NewState = newState;
+    }
+}
+
+/// <summary>
+/// 单个步骤完成事件参数
+/// </summary>
+public class StepCompletedEventArgs : EventArgs
+{
+    public SOPStep Step { get; }
+    public bool HasViolations { get; }
+
+    public StepCompletedEventArgs(SOPStep step, bool hasViolations)
+    {
+        Step = step;
+        HasViolations = hasViolations;
     }
 }

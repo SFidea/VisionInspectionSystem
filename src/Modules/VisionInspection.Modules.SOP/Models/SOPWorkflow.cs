@@ -58,6 +58,31 @@ public class SOPStep
     /// 支持给每个相机/步骤指定不同模型。
     /// </summary>
     public string? ModelPath { get; set; }
+
+    /// <summary>
+    /// Modbus 违规触发配置：该步骤完成后若发生违规，触发功能码 06 写单个寄存器（Y1-Y8）。
+    /// 由 YAML 的 step.modbus_trigger 节点解析而来；null = 未配置（不触发）。
+    /// </summary>
+    public ModbusTriggerConfig? ModbusTrigger { get; set; }
+}
+
+/// <summary>
+/// Modbus 违规触发配置（功能码 06：写单个寄存器 Y1-Y8）。
+/// 对应 YAML step.modbus_trigger 节点。
+/// </summary>
+public class ModbusTriggerConfig
+{
+    /// <summary>是否启用本步违规触发</summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>输出地址 0-7（对应 Y1-Y8）</summary>
+    public int Address { get; set; }
+
+    /// <summary>非锁存模式的脉宽（毫秒，100-5000）。锁存模式忽略此值。</summary>
+    public int PulseMs { get; set; } = 500;
+
+    /// <summary>是否锁存：true=保持输出直到管理员复位；false=按 PulseMs 时长触发</summary>
+    public bool Latch { get; set; }
 }
 
 /// <summary>

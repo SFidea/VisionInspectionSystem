@@ -492,11 +492,44 @@ namespace VisionInspection.UI.Views
             ForbiddenTextBox.Text = string.Join(", ", step.ForbiddenObjects ?? new List<string>());
             MustKeepTextBox.Text = string.Join(", ", step.MustKeep ?? new List<string>());
 
+            // ⭐ 步骤级 Modbus 违规触发
+            var mt = step.ModbusTrigger;
+            ModbusTriggerCheckBox.IsChecked = mt?.Enabled == true;
+            SelectModbusAddress(mt?.Address ?? 0);
+            ModbusPulseTextBox.Text = ((mt?.PulseMs) ?? 500).ToString();
+            ModbusLatchCheckBox.IsChecked = mt?.Latch == true;
+            SetModbusPanelEnabled(mt?.Enabled == true);
+
             // ⭐ 步骤级相机/模型
             SelectComboItemByValue(StepCameraCombo, string.IsNullOrWhiteSpace(step.Camera) ? "main_camera" : step.Camera);
             SelectComboItemByValue(StepModelCombo, step.Model ?? "");
 
             UpdateDetectionFieldVisibility();
+        }
+
+        /// <summary>根据地址 0-7 选中 Y1-Y8</summary>
+        private void SelectModbusAddress(int address)
+        {
+            foreach (var item in ModbusAddressCombo.Items)
+            {
+                if (item is ComboBoxItem cbi && cbi.Tag?.ToString() == address.ToString())
+                {
+                    ModbusAddressCombo.SelectedItem = cbi;
+                    return;
+                }
+            }
+            ModbusAddressCombo.SelectedIndex = 0;
+        }
+
+        private void SetModbusPanelEnabled(bool enabled)
+        {
+            ModbusTriggerPanel.IsEnabled = enabled;
+            ModbusLatchCheckBox.IsEnabled = enabled;
+        }
+
+        private void ModbusTriggerCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            SetModbusPanelEnabled(ModbusTriggerCheckBox.IsChecked == true);
         }
 
         private void ClearStepEditor()
@@ -519,6 +552,12 @@ namespace VisionInspection.UI.Views
             DetectionDescTextBox.Text = "";
             ForbiddenTextBox.Text = "";
             MustKeepTextBox.Text = "";
+            // ⭐ 步骤级 Modbus 触发复位为默认
+            ModbusTriggerCheckBox.IsChecked = false;
+            SelectModbusAddress(0);
+            ModbusPulseTextBox.Text = "500";
+            ModbusLatchCheckBox.IsChecked = false;
+            SetModbusPanelEnabled(false);
             // ⭐ 步骤级相机/模型复位为默认
             StepCameraCombo.SelectedIndex = 0;
             StepModelCombo.SelectedIndex = 0;
@@ -572,6 +611,24 @@ namespace VisionInspection.UI.Views
 
             step.ForbiddenObjects = SplitList(ForbiddenTextBox.Text);
             step.MustKeep = SplitList(MustKeepTextBox.Text);
+
+            // ⭐ 步骤级 Modbus 违规触发（仅在启用时写入；未启用则清空节点）
+            if (ModbusTriggerCheckBox.IsChecked == true)
+            {
+                int address = int.TryParse(GetSelectedTag(ModbusAddressCombo), out var ad) ? Math.Clamp(ad, 0, 7) : 0;
+                int pulse = int.TryParse(ModbusPulseTextBox.Text, out var pm) ? Math.Clamp(pm, 100, 5000) : 500;
+                step.ModbusTrigger = new SopyamlModbusTrigger
+                {
+                    Enabled = true,
+                    Address = address,
+                    PulseMs = pulse,
+                    Latch = ModbusLatchCheckBox.IsChecked == true
+                };
+            }
+            else
+            {
+                step.ModbusTrigger = null;
+            }
 
             // ⭐ 步骤级相机/模型（主相机与空模型不写，保持缺省语义）
             step.Camera = StepCameraCombo.SelectedItem is CameraOptionItem camSel && camSel.Id != "main_camera"

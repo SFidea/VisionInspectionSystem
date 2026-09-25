@@ -120,6 +120,34 @@ public class SopyamlStep
     /// </summary>
     [YamlMember(Alias = "required_objects")]
     public List<SopyamlRequiredObject>? RequiredObjects { get; set; }
+
+    /// <summary>
+    /// Modbus 违规触发配置（功能码 06：写单个寄存器 Y1-Y8）。
+    /// 该步骤完成后若发生违规，写对应输出地址。
+    /// </summary>
+    [YamlMember(Alias = "modbus_trigger")]
+    public SopyamlModbusTrigger? ModbusTrigger { get; set; }
+}
+
+/// <summary>
+/// YAML 步骤级 Modbus 违规触发（modbus_trigger 节点）
+/// </summary>
+public class SopyamlModbusTrigger
+{
+    [YamlMember(Alias = "enabled")]
+    public bool Enabled { get; set; }
+
+    /// <summary>输出地址 0-7（对应 Y1-Y8）</summary>
+    [YamlMember(Alias = "address")]
+    public int Address { get; set; }
+
+    /// <summary>非锁存模式脉宽（毫秒，100-5000）</summary>
+    [YamlMember(Alias = "pulse_ms")]
+    public int PulseMs { get; set; } = 500;
+
+    /// <summary>是否锁存（锁存需管理员复位）</summary>
+    [YamlMember(Alias = "latch")]
+    public bool Latch { get; set; }
 }
 
 /// <summary>
@@ -552,6 +580,18 @@ public static class SOPYamlConverter
                 ModelPath = string.IsNullOrWhiteSpace(yamlStep.Model) ? null : yamlStep.Model.Trim()
             };
 
+            // ⭐ 步骤级 Modbus 违规触发（功能码 06：写单个寄存器 Y1-Y8）
+            if (yamlStep.ModbusTrigger != null && yamlStep.ModbusTrigger.Enabled)
+            {
+                step.ModbusTrigger = new ModbusTriggerConfig
+                {
+                    Enabled = true,
+                    Address = Math.Clamp(yamlStep.ModbusTrigger.Address, 0, 7),
+                    PulseMs = Math.Clamp(yamlStep.ModbusTrigger.PulseMs, 100, 5000),
+                    Latch = yamlStep.ModbusTrigger.Latch
+                };
+            }
+
             // 标准耗时：优先 YAML 的 standard_duration_ms，缺省回退该步 detection.duration_ms
             double standardSec = 0;
             if (yamlStep.StandardDurationMs > 0)
@@ -976,6 +1016,18 @@ public static class SOPYamlConverter
                 {
                     yamlStep.RequiredObjects = reqList;
                 }
+            }
+
+            // ⭐ 回写步骤级 Modbus 违规触发配置（modbus_trigger 节点）
+            if (step.ModbusTrigger != null && step.ModbusTrigger.Enabled)
+            {
+                yamlStep.ModbusTrigger = new SopyamlModbusTrigger
+                {
+                    Enabled = true,
+                    Address = Math.Clamp(step.ModbusTrigger.Address, 0, 7),
+                    PulseMs = Math.Clamp(step.ModbusTrigger.PulseMs, 100, 5000),
+                    Latch = step.ModbusTrigger.Latch
+                };
             }
 
             yamlSop.Steps.Add(yamlStep);

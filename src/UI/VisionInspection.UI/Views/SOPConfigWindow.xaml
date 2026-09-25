@@ -229,6 +229,39 @@
                             <TextBox x:Name="ForbiddenTextBox" Style="{StaticResource FieldInput}"/>
                             <TextBlock Text="必须保持物体（must_keep，逗号分隔）" Style="{StaticResource FieldLabel}"/>
                             <TextBox x:Name="MustKeepTextBox" Style="{StaticResource FieldInput}"/>
+
+                            <!-- ⭐ 步骤级 Modbus 违规触发（功能码 06：写单个寄存器 Y1-Y8） -->
+                            <TextBlock Text="Modbus 违规触发" Style="{StaticResource SectionHeader}" Margin="0,18,0,5"/>
+                            <TextBlock Text="本步完成后若发生违规，触发功能码 06 写单个寄存器（Y1-Y8）。" Style="{StaticResource HintText}" Margin="0,0,0,6"/>
+                            <CheckBox x:Name="ModbusTriggerCheckBox" Content="启用本步 Modbus 触发（modbus_trigger.enabled）"
+                                      Checked="ModbusTriggerCheckBox_Changed" Unchecked="ModbusTriggerCheckBox_Changed"/>
+                            <Grid x:Name="ModbusTriggerPanel" Margin="0,10,0,0" IsEnabled="False">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="12"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="输出地址（address，Y1-Y8）" Style="{StaticResource FieldLabel}"/>
+                                    <ComboBox x:Name="ModbusAddressCombo" Style="{StaticResource FieldCombo}">
+                                        <ComboBoxItem Content="Y1（地址 0）" Tag="0" IsSelected="True"/>
+                                        <ComboBoxItem Content="Y2（地址 1）" Tag="1"/>
+                                        <ComboBoxItem Content="Y3（地址 2）" Tag="2"/>
+                                        <ComboBoxItem Content="Y4（地址 3）" Tag="3"/>
+                                        <ComboBoxItem Content="Y5（地址 4）" Tag="4"/>
+                                        <ComboBoxItem Content="Y6（地址 5）" Tag="5"/>
+                                        <ComboBoxItem Content="Y7（地址 6）" Tag="6"/>
+                                        <ComboBoxItem Content="Y8（地址 7）" Tag="7"/>
+                                    </ComboBox>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="触发时长（pulse_ms，100-5000）" Style="{StaticResource FieldLabel}"/>
+                                    <TextBox x:Name="ModbusPulseTextBox" Style="{StaticResource FieldInput}" Text="500"
+                                             ToolTip="非锁存模式下的脉宽（毫秒）；锁存模式忽略此值"/>
+                                </StackPanel>
+                            </Grid>
+                            <CheckBox x:Name="ModbusLatchCheckBox" Content="锁存输出（latch：保持为 1，需管理员复位）"
+                                      Margin="0,10,0,0" IsEnabled="False"/>
                         </StackPanel>
                     </ScrollViewer>
                 </TabItem>

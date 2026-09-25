@@ -142,6 +142,18 @@ namespace VisionInspection.UI.Views
         }
 
         /// <summary>
+        /// 控件载入后，将默认/上次加载的配方同步给运行时 MainViewModel.SopWorkflowPath，
+        /// 确保用户不手动切换配方、直接启动 SOP 检测时也使用该配方。
+        /// </summary>
+        private void SOPModuleView_Loaded(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(_currentYamlPath) || !System.IO.File.Exists(_currentYamlPath))
+                return;
+            var vm = GetMainViewModel();
+            if (vm != null) vm.SopWorkflowPath = _currentYamlPath;
+        }
+
+        /// <summary>
         /// 初始化示例步骤（回退方案）
         /// </summary>
         private void InitializeSampleSteps()
@@ -155,17 +167,19 @@ namespace VisionInspection.UI.Views
         }
 
         /// <summary>
-        /// 加载默认工作流（优先从YAML加载，失败则使用示例步骤）
+        /// 加载默认工作流：优先加载「上次加载的配方」，否则加载目录中第一个可用配方；
+        /// 失败则使用示例步骤。加载成功后持久化，供下次启动默认加载。
         /// </summary>
         private void LoadDefaultWorkflow()
         {
-            var yamlPath = FindDefaultYamlFile();
-            if (!string.IsNullOrEmpty(yamlPath))
+            var yamlPath = GetLastRecipePath() ?? FindDefaultYamlFile();
+            if (!string.IsNullOrEmpty(yamlPath) && System.IO.File.Exists(yamlPath))
             {
                 try
                 {
                     LoadStepsFromYaml(yamlPath);
                     _currentYamlPath = yamlPath;
+                    SaveLastRecipePath(yamlPath);
                     AddLog($"已加载工作流: {System.IO.Path.GetFileName(yamlPath)}");
                     return;
                 }
@@ -195,6 +209,63 @@ namespace VisionInspection.UI.Views
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// 上次加载配方的持久化文件路径（位于运行时基目录 configs/ 下，不随源码分发）。
+        /// </summary>
+        private static string LastRecipeConfigPath =>
+            System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "configs", "last_recipe.json");
+
+        /// <summary>
+        /// 读取上次加载的产品配方路径。以相对基目录的方式存储，兼容不同部署路径；
+        /// 文件不存在或指向的文件已删除时返回 null（回退到默认第一个配方）。
+        /// </summary>
+        private static string? GetLastRecipePath()
+        {
+            try
+            {
+                var p = LastRecipeConfigPath;
+                if (!System.IO.File.Exists(p)) return null;
+                var json = System.IO.File.ReadAllText(p);
+                var m = Regex.Match(json, "\"last_recipe\"\\s*:\\s*\"([^\"]+)\"");
+                if (!m.Success) return null;
+                var rel = m.Groups[1].Value;
+                var full = System.IO.Path.IsPathRooted(rel)
+                    ? rel
+                    : System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, rel);
+                return System.IO.File.Exists(full) ? full : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 持久化上次加载的产品配方路径（相对基目录），供下次启动默认加载。
+        /// 写入失败不影响主流程。
+        /// </summary>
+        private static void SaveLastRecipePath(string fullPath)
+        {
+            try
+            {
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string rel;
+                if (fullPath.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))
+                    rel = fullPath.Substring(baseDir.Length)
+                        .TrimStart(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
+                else
+                    rel = fullPath;
+                var dir = System.IO.Path.GetDirectoryName(LastRecipeConfigPath)!;
+                System.IO.Directory.CreateDirectory(dir);
+                System.IO.File.WriteAllText(LastRecipeConfigPath,
+                    "{\"last_recipe\":\"" + rel.Replace("\\", "/") + "\"}");
+            }
+            catch
+            {
+                // 持久化失败不影响主流程
+            }
         }
 
         /// <summary>
@@ -284,6 +355,9 @@ namespace VisionInspection.UI.Views
             {
                 LoadStepsFromYaml(item.FullPath);
                 _currentYamlPath = item.FullPath;
+
+                // 持久化本次选择，下次启动默认加载该配方
+                SaveLastRecipePath(_currentYamlPath);
 
                 // 同步给 MainViewModel，运行时将使用新配方
                 var vm = GetMainViewModel();
@@ -1070,13 +1144,14 @@ namespace VisionInspection.UI.Views
         }
 
         /// <summary>
-        /// 添加日志
+        /// 添加日志。
+        /// 日志统一进「独立运行日志窗口」：这里只写入共享缓冲（<see cref="SopRunLog"/>），
+        /// 窗口打开时实时显示、后开时回填历史。
         /// </summary>
         public void AddLog(string message)
         {
             var timestamp = DateTime.Now.ToString("HH:mm:ss");
-            LogTextBox.AppendText($"[{timestamp}] {message}\n");
-            LogTextBox.ScrollToEnd();
+            SopRunLog.Instance.Append($"[{timestamp}] {message}");
         }
 
         /// <summary>
@@ -1373,6 +1448,74 @@ namespace VisionInspection.UI.Views
                 RunButton.Background = new SolidColorBrush(Color.FromRgb(82, 196, 26)); // 绿色
             }
         }
+
+        /// <summary>
+        /// 复位按钮点击：清除当前周期结果并把 SOP 流程复位到第一步。
+        /// 运行中会先停止实时检测，避免复位后推理线程继续推进步骤。
+        /// 注意：Modbus 的「锁存输出」按需求只能由管理员在通信设置里复位，此处不代劳。
+        /// </summary>
+        private async void ResetButton_Click(object sender, RoutedEventArgs e)
+        {
+            var viewModel = GetMainViewModel();
+            if (viewModel == null)
+            {
+                MessageBox.Show("无法获取主视图模型", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            try
+            {
+                ResetButton.IsEnabled = false;
+
+                // 1) 运行中先停止（停止内部会清缓存/告警并复位状态机）
+                if (viewModel.IsSOPDetecting)
+                {
+                    await viewModel.StopSOPDetectionAsync();
+                }
+
+                // 2) 复位状态机工作流（回到第一步）
+                viewModel.ResetSOPWorkflow();
+
+                // 3) 复位界面：步骤状态、耗时、计时器、结果与总状态
+                ResetStepDisplayState();
+                _currentStepIndex = -1;
+                ResetTimer();
+
+                SetStatus("已复位", new SolidColorBrush(Colors.Gray));
+                SetResult("--", new SolidColorBrush(Colors.Gray));
+
+                UpdateRunButtonState(false);
+                AddLog("🔄 SOP 流程已复位，从第一步重新开始");
+            }
+            catch (Exception ex)
+            {
+                AddLog($"复位失败: {ex.Message}");
+                MessageBox.Show($"复位失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                ResetButton.IsEnabled = true;
+            }
+        }
+
+        /// <summary>
+        /// 把步骤列表显示状态全部复位为「未开始」，并清空耗时
+        /// </summary>
+        private void ResetStepDisplayState()
+        {
+            foreach (var step in _steps)
+            {
+                step.Status = StepStatus.Pending;
+                step.ResultMessage = string.Empty;
+                step.Duration = TimeSpan.Zero;
+            }
+            UpdateStepDisplay();
+        }
+
+        /// <summary>
+        /// 打开独立运行日志窗口
+        /// </summary>
+        private void LogButton_Click(object sender, RoutedEventArgs e) => SopLogWindow.ShowWindow();
 
         /// <summary>
         /// SOP 工作流完成事件处理

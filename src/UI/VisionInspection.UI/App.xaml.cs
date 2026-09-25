@@ -45,6 +45,14 @@ public partial class App : Application
             // 登录成功，显示主窗口
             var mainWindow = new MainWindow(_userManager);
             mainWindow.Show();
+
+            // ⭐ 程序启动后默认连接 Modbus（若配置允许），并启动断线低频自动重连。
+            // 放到后台线程执行，避免 TCP 连接超时阻塞 UI 启动。
+            _ = Task.Run(() =>
+            {
+                try { ModbusService.Instance.Start(); }
+                catch (Exception ex) { Debug.WriteLine($"Modbus 启动连接失败：{ex.Message}"); }
+            });
         }
         catch (Exception ex)
         {
