@@ -518,13 +518,28 @@ public class SOPModule : IDetectionModule
 
             Log($"解析后路径: {actualModelPath}, 是否目录: {Directory.Exists(actualModelPath)}, 是否文件: {File.Exists(actualModelPath)}");
 
+            // ⭐ 必须克隆"完整"配置：检测器只在初始化时读取配置快照（readonly 字段），
+            // 若这里只 new 5 个字段，UI 调节的其余参数（检测左/右手、手掌置信度、
+            // 最小框面积、面部过滤、结构验证、旋转增强）会全部回落默认值，导致
+            // "界面调了但 SOP 检测不生效"。仅覆盖解析后的模型路径与运行时后端。
+            var src = _config.HandPoseEstimation ?? new HandPoseEstimationConfig();
             var handConfig = new HandPoseEstimationConfig
             {
-                ModelPath = actualModelPath,
-                Backend = _handBackend,
-                ConfidenceThreshold = _config.HandPoseEstimation?.ConfidenceThreshold ?? 0.5f,
-                MaxNumHands = _config.HandPoseEstimation?.MaxNumHands ?? 2,
-                UseGpu = _config.HandPoseEstimation?.UseGpu ?? true
+                ModelPath = actualModelPath,                 // 触发 Palm/Landmark 路径拆分
+                Backend = _handBackend,                       // 用 UI/运行时选择的后端（非 JSON 启动值）
+                ConfidenceThreshold = src.ConfidenceThreshold,
+                DetectionConfidenceThreshold = src.DetectionConfidenceThreshold,
+                MinBoxAreaRatio = src.MinBoxAreaRatio,
+                RotationAugmentation = src.RotationAugmentation,
+                MaxNumHands = src.MaxNumHands,
+                DetectLeftHand = src.DetectLeftHand,
+                DetectRightHand = src.DetectRightHand,
+                UseGpu = src.UseGpu,
+                EnableFaceFilter = src.EnableFaceFilter,
+                FaceFilterUpperRatio = src.FaceFilterUpperRatio,
+                EnableHandStructureCheck = src.EnableHandStructureCheck,
+                HandStructureWristTipRatio = src.HandStructureWristTipRatio,
+                RawModelPath = src.RawModelPath
             };
 
             Log($"PalmModelPath: '{handConfig.PalmModelPath}', LandmarkModelPath: '{handConfig.LandmarkModelPath}'");
