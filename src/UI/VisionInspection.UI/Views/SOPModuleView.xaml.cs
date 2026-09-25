@@ -28,7 +28,6 @@ namespace VisionInspection.UI.Views
 
         // 计时器相关
         private DispatcherTimer? _timer;
-        private DispatcherTimer? _thumbnailTimer;
         private DateTime _timerStartTime;
         private bool _isTimerRunning = false;
 
@@ -62,13 +61,6 @@ namespace VisionInspection.UI.Views
                 Interval = TimeSpan.FromMilliseconds(100) // 100ms更新一次
             };
             _timer.Tick += Timer_Tick;
-
-            // 缩略图刷新定时器：检测运行时每 200ms 取最新帧渲染到面板缩略图（节流避免每帧重建）
-            _thumbnailTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromMilliseconds(200)
-            };
-            _thumbnailTimer.Tick += ThumbnailTimer_Tick;
         }
 
         /// <summary>
@@ -84,10 +76,11 @@ namespace VisionInspection.UI.Views
         }
 
         /// <summary>
-        /// 缩略图刷新：检测运行时节流从主视图取最新帧，编码为缩略图显示到面板。
+        /// 刷新缩略图：取主视图当前帧，编码为缩略图显示到面板。
         /// 仅当开关 EnableThumbnail 开启时执行；帧可能被后台线程替换/释放，读取失败忽略。
+        /// 仅在检测成功（PASS）时调用 —— 不持续刷新，仅展示成功那一帧。
         /// </summary>
-        private void ThumbnailTimer_Tick(object? sender, EventArgs e)
+        private void RefreshThumbnailFromCurrentFrame()
         {
             if (!SopCaptureConfigManager.Instance.Config.EnableThumbnail) return;
 
@@ -1467,7 +1460,6 @@ namespace VisionInspection.UI.Views
                 SetStatus("检测已停止", new SolidColorBrush(Colors.Gray));
                 SetResult("--", new SolidColorBrush(Colors.Gray));
                 StopTimer();
-                _thumbnailTimer?.Stop();
                 ThumbnailImage.Source = null;
                 ThumbnailPlaceholder.Visibility = Visibility.Visible;
                 UpdateRunButtonState(false);
@@ -1505,7 +1497,6 @@ namespace VisionInspection.UI.Views
                 SetResult("检测中...", new SolidColorBrush(Colors.Gray));
                 ClearStepDurations();
                 StartTimer();
-                _thumbnailTimer?.Start();
                 UpdateRunButtonState(true);
                 AddLog($"SOP 实时检测已启动 | 模式: {viewModel.SOPModuleInstance?.DetectionMode}");
             }
@@ -1589,7 +1580,6 @@ namespace VisionInspection.UI.Views
                 {
                     await viewModel.StopSOPDetectionAsync();
                 }
-                _thumbnailTimer?.Stop();
                 ThumbnailImage.Source = null;
                 ThumbnailPlaceholder.Visibility = Visibility.Visible;
 
@@ -1653,6 +1643,8 @@ namespace VisionInspection.UI.Views
                     SetResult("PASS", new SolidColorBrush(Color.FromRgb(82, 196, 26)));
                     SetStatus("检测完成", new SolidColorBrush(Color.FromRgb(82, 196, 26)));
                     AddLog($"✅ SOP 检测全部通过 | 总耗时: {TimerTextBlock.Text}");
+                    // 缩略图仅展示检测成功那一帧（不持续刷新实时画面）
+                    RefreshThumbnailFromCurrentFrame();
                 }
                 else
                 {

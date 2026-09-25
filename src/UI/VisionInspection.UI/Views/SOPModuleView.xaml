@@ -148,7 +148,7 @@
                         Background="#FAFAFA" Height="160">
                     <Grid>
                         <Image x:Name="ThumbnailImage" Stretch="Uniform" Margin="4"/>
-                        <TextBlock x:Name="ThumbnailPlaceholder" Text="检测运行时显示实时缩略图"
+                        <TextBlock x:Name="ThumbnailPlaceholder" Text="检测成功时显示最后一帧"
                                    Foreground="#BBB" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Grid>
                 </Border>
