@@ -294,21 +294,10 @@
                                     <TextBox x:Name="SettingsStableTextBox" Style="{StaticResource FieldInput}"/>
                                 </StackPanel>
                             </Grid>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="12"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="全局超时秒数（timeoutSeconds）" Style="{StaticResource FieldLabel}"/>
-                                    <TextBox x:Name="SettingsTimeoutTextBox" Style="{StaticResource FieldInput}"/>
-                                </StackPanel>
-                                <StackPanel Grid.Column="2">
-                                    <TextBlock Text="完成重置延迟秒（reset_delay_sec）" Style="{StaticResource FieldLabel}"/>
-                                    <TextBox x:Name="ResetDelayTextBox" Style="{StaticResource FieldInput}"/>
-                                </StackPanel>
-                            </Grid>
+                            <StackPanel>
+                                <TextBlock Text="完成重置延迟秒（reset_delay_sec）" Style="{StaticResource FieldLabel}"/>
+                                <TextBox x:Name="ResetDelayTextBox" Style="{StaticResource FieldInput}"/>
+                            </StackPanel>
                             <CheckBox x:Name="SettingsSkipCheckBox" Content="启用跳步检测（enableSkipDetection）" Margin="0,12,0,0"/>
                             <CheckBox x:Name="SettingsTimeoutDetectCheckBox" Content="启用超时检测（enableTimeoutDetection）" Margin="0,8,0,0"/>
                             <CheckBox x:Name="AutoResetCheckBox" Content="完成后自动重置循环检测（auto_reset_on_complete）" Margin="0,8,0,0"/>
@@ -328,26 +317,10 @@
                             <TextBlock Text="ONNX 模型路径（path，可下拉选择或手动填写）" Style="{StaticResource FieldLabel}"/>
                             <ComboBox x:Name="ModelPathCombo" Style="{StaticResource FieldCombo}" IsEditable="True"
                                       ToolTip="下拉选择模型目录（yolo_models）中的 ONNX 文件，也可手动输入路径"/>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="12"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="模型类型（type）" Style="{StaticResource FieldLabel}"/>
-                                    <ComboBox x:Name="ModelTypeCombo" Style="{StaticResource FieldCombo}">
-                                        <ComboBoxItem Content="物体检测（ObjectDetection）" Tag="ObjectDetection"/>
-                                        <ComboBoxItem Content="分割（Segmentation）" Tag="Segmentation"/>
-                                        <ComboBoxItem Content="姿态（PoseEstimation）" Tag="PoseEstimation"/>
-                                        <ComboBoxItem Content="旋转框（OBBDetection）" Tag="OBBDetection"/>
-                                    </ComboBox>
-                                </StackPanel>
-                                <StackPanel Grid.Column="2">
-                                    <TextBlock Text="GPU 设备 ID（gpu_id）" Style="{StaticResource FieldLabel}"/>
-                                    <TextBox x:Name="ModelGpuIdTextBox" Style="{StaticResource FieldInput}"/>
-                                </StackPanel>
-                            </Grid>
+                            <StackPanel>
+                                <TextBlock Text="GPU 设备 ID（gpu_id）" Style="{StaticResource FieldLabel}"/>
+                                <TextBox x:Name="ModelGpuIdTextBox" Style="{StaticResource FieldInput}"/>
+                            </StackPanel>
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -364,8 +337,6 @@
                                 </StackPanel>
                             </Grid>
                             <CheckBox x:Name="ModelGpuCheckBox" Content="使用 GPU（use_gpu）" Margin="0,10,0,0"/>
-                            <TextBlock Text="可检测类别（classes，逗号分隔）" Style="{StaticResource FieldLabel}"/>
-                            <TextBox x:Name="ModelClassesTextBox" Style="{StaticResource FieldInput}"/>
 
                             <TextBlock Text="区域监控配置（monitoring）" Style="{StaticResource SectionHeader}" Margin="0,18,0,5"/>
                             <TextBlock Text="仅当原配置存在 monitoring 节点或勾选下方启用时才会写入该节点。" Style="{StaticResource HintText}" Margin="0,0,0,8"/>

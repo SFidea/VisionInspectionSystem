@@ -69,22 +69,11 @@ public static class SopYamlGenerator
             Regions = input.Regions,
             Settings = new SopyamlSettings
             {
-                DetectionMode = "pose_based",
                 ConfidenceThreshold = 0.6f,
-                StableFrames = 3,
                 EnableTimeoutDetection = input.EnableTimeoutDetection, // true=按每步 timeout 判定；false=所有步骤不限制超时
                 EnableSkipDetection = true,
                 AutoResetOnComplete = true,
                 ResetDelaySec = 1
-            },
-            Visualization = new SopyamlVisualization
-            {
-                ShowRegions = true,
-                ShowKeypoints = true,
-                ShowSkeleton = true,
-                ShowTrackingId = true,
-                RegionAlpha = 0.3f,
-                KeypointRadius = 5
             }
         };
 
@@ -96,7 +85,6 @@ public static class SopYamlGenerator
             sop.Model = new SopyamlModel
             {
                 Path = input.SopModelPath.Trim(),
-                Type = "ObjectDetection",
                 Confidence = 0.6f,
                 Iou = 0.45f
             };

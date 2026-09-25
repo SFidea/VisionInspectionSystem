@@ -234,11 +234,6 @@ public class SOPModelConfig
     public string Path { get; set; } = "yolo_models/sop_yolov8n.onnx";
 
     /// <summary>
-    /// 模型类型标识
-    /// </summary>
-    public string Type { get; set; } = "ObjectDetection";
-
-    /// <summary>
     /// 检测置信度阈值 (0-1)
     /// </summary>
     public float Confidence { get; set; } = 0.6f;
@@ -257,12 +252,6 @@ public class SOPModelConfig
     /// GPU 设备 ID
     /// </summary>
     public int GpuId { get; set; } = 0;
-
-    /// <summary>
-    /// 该模型可检测的类别名称列表
-    /// 用于 SOP 条件评估时做类别名称校验
-    /// </summary>
-    public List<string> Classes { get; set; } = new();
 }
 
 /// <summary>

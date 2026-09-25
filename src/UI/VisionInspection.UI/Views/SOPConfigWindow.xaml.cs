@@ -759,7 +759,6 @@ namespace VisionInspection.UI.Views
             var s = sop.Settings;
             SettingsConfTextBox.Text = s.ConfidenceThreshold.ToString("0.##");
             SettingsStableTextBox.Text = s.StableFrames.ToString();
-            SettingsTimeoutTextBox.Text = s.TimeoutSeconds.ToString();
             ResetDelayTextBox.Text = s.ResetDelaySec.ToString();
             SettingsSkipCheckBox.IsChecked = s.EnableSkipDetection;
             SettingsTimeoutDetectCheckBox.IsChecked = s.EnableTimeoutDetection;
@@ -777,7 +776,6 @@ namespace VisionInspection.UI.Views
             var s = sop.Settings;
             if (float.TryParse(SettingsConfTextBox.Text, out var conf)) s.ConfidenceThreshold = conf;
             if (int.TryParse(SettingsStableTextBox.Text, out var sf)) s.StableFrames = sf;
-            if (int.TryParse(SettingsTimeoutTextBox.Text, out var ts)) s.TimeoutSeconds = ts;
             if (int.TryParse(ResetDelayTextBox.Text, out var rd)) s.ResetDelaySec = rd;
             s.EnableSkipDetection = SettingsSkipCheckBox.IsChecked ?? true;
             s.EnableTimeoutDetection = SettingsTimeoutDetectCheckBox.IsChecked ?? true;
@@ -840,12 +838,10 @@ namespace VisionInspection.UI.Views
             md ??= new SopyamlModel();
             FillModelPathCombo(); // ⭐ 扫描 yolo_models 目录填充模型下拉
             ModelPathCombo.Text = _hadModel ? md.Path : "";
-            SelectComboByTag(ModelTypeCombo, md.Type);
             ModelConfTextBox.Text = md.Confidence.ToString("0.##");
             ModelIouTextBox.Text = md.Iou.ToString("0.##");
             ModelGpuCheckBox.IsChecked = md.UseGpu;
             ModelGpuIdTextBox.Text = md.GpuId.ToString();
-            ModelClassesTextBox.Text = string.Join(", ", md.Classes ?? new List<string>());
 
             // 监控：同上，原配置没有时默认不启用，不主动创建节点
             var m = sop.Monitoring;
@@ -886,17 +882,14 @@ namespace VisionInspection.UI.Views
 
             // 模型：原本有节点、或用户填写了路径、或填写了类别，才写回（避免"只填类别不填路径"时丢失）
             if (_hadModel
-                || !string.IsNullOrWhiteSpace(ModelPathCombo.Text)
-                || !string.IsNullOrWhiteSpace(ModelClassesTextBox.Text))
+                || !string.IsNullOrWhiteSpace(ModelPathCombo.Text))
             {
                 var md = sop.Model ?? new SopyamlModel();
                 md.Path = ModelPathCombo.Text.Trim();
-                md.Type = GetSelectedTag(ModelTypeCombo) ?? "ObjectDetection";
                 if (float.TryParse(ModelConfTextBox.Text, out var conf)) md.Confidence = conf;
                 if (float.TryParse(ModelIouTextBox.Text, out var iou)) md.Iou = iou;
                 md.UseGpu = ModelGpuCheckBox.IsChecked ?? true;
                 if (int.TryParse(ModelGpuIdTextBox.Text, out var gpuId)) md.GpuId = gpuId;
-                md.Classes = SplitList(ModelClassesTextBox.Text) ?? new List<string>();
                 sop.Model = md;
             }
             else

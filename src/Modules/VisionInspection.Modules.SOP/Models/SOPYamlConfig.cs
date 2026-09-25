@@ -29,20 +29,8 @@ public class SopyamlSop
     [YamlMember(Alias = "regions")]
     public Dictionary<string, SopyamlRegion>? Regions { get; set; }
 
-    [YamlMember(Alias = "forbidden_zones")]
-    public Dictionary<string, SopyamlRegion>? ForbiddenZones { get; set; }
-
     [YamlMember(Alias = "settings")]
     public SopyamlSettings? Settings { get; set; }
-
-    [YamlMember(Alias = "violations")]
-    public List<SopyamlViolationDefinition>? Violations { get; set; }
-
-    [YamlMember(Alias = "keypoints")]
-    public SopyamlKeypoints? Keypoints { get; set; }
-
-    [YamlMember(Alias = "visualization")]
-    public SopyamlVisualization? Visualization { get; set; }
 
     // ⭐ 新增：SOP模型配置
     [YamlMember(Alias = "model")]
@@ -176,17 +164,11 @@ public class SopyamlRequiredObject
 
 public class SopyamlSettings
 {
-    [YamlMember(Alias = "detectionMode")]
-    public string? DetectionMode { get; set; }
-
     [YamlMember(Alias = "confidenceThreshold")]
     public float ConfidenceThreshold { get; set; } = 0.6f;
 
     [YamlMember(Alias = "stableFrames")]
     public int StableFrames { get; set; } = 3;
-
-    [YamlMember(Alias = "timeoutSeconds")]
-    public int TimeoutSeconds { get; set; } = 30;
 
     [YamlMember(Alias = "enableSkipDetection")]
     public bool EnableSkipDetection { get; set; } = true;
@@ -285,48 +267,6 @@ public class SopyamlViolationRule
     public string? Description { get; set; }
 }
 
-public class SopyamlViolationDefinition
-{
-    [YamlMember(Alias = "id")]
-    public string Id { get; set; } = "";
-
-    [YamlMember(Alias = "name")]
-    public string Name { get; set; } = "";
-
-    [YamlMember(Alias = "description")]
-    public string? Description { get; set; }
-
-    [YamlMember(Alias = "severity")]
-    public string Severity { get; set; } = "warning";
-}
-
-public class SopyamlKeypoints
-{
-    [YamlMember(Alias = "required")]
-    public List<string>? Required { get; set; }
-}
-
-public class SopyamlVisualization
-{
-    [YamlMember(Alias = "show_regions")]
-    public bool ShowRegions { get; set; } = true;
-
-    [YamlMember(Alias = "show_keypoints")]
-    public bool ShowKeypoints { get; set; } = true;
-
-    [YamlMember(Alias = "show_skeleton")]
-    public bool ShowSkeleton { get; set; } = true;
-
-    [YamlMember(Alias = "show_tracking_id")]
-    public bool ShowTrackingId { get; set; } = true;
-
-    [YamlMember(Alias = "region_alpha")]
-    public float RegionAlpha { get; set; } = 0.3f;
-
-    [YamlMember(Alias = "keypoint_radius")]
-    public int KeypointRadius { get; set; } = 5;
-}
-
 /// <summary>
 /// SOP模型配置
 /// </summary>
@@ -337,12 +277,6 @@ public class SopyamlModel
     /// </summary>
     [YamlMember(Alias = "path")]
     public string Path { get; set; } = "yolo_models/sop_yolov8n.onnx";
-
-    /// <summary>
-    /// 模型类型: ObjectDetection / Segmentation / PoseEstimation / OBBDetection
-    /// </summary>
-    [YamlMember(Alias = "type")]
-    public string Type { get; set; } = "ObjectDetection";
 
     /// <summary>
     /// 检测置信度阈值 (0-1)
@@ -367,12 +301,6 @@ public class SopyamlModel
     /// </summary>
     [YamlMember(Alias = "gpu_id")]
     public int GpuId { get; set; } = 0;
-
-    /// <summary>
-    /// 该模型可检测的类别名称列表
-    /// </summary>
-    [YamlMember(Alias = "classes")]
-    public List<string> Classes { get; set; } = new();
 }
 
 /// <summary>
@@ -696,12 +624,10 @@ public static class SOPYamlConverter
             workflow.Model = new SOPModelConfig
             {
                 Path = yamlSop.Model.Path,
-                Type = yamlSop.Model.Type,
                 Confidence = yamlSop.Model.Confidence,
                 Iou = yamlSop.Model.Iou,
                 UseGpu = yamlSop.Model.UseGpu,
-                GpuId = yamlSop.Model.GpuId,
-                Classes = yamlSop.Model.Classes
+                GpuId = yamlSop.Model.GpuId
             };
 
             if (string.IsNullOrEmpty(workflow.Description))
@@ -757,24 +683,6 @@ public static class SOPYamlConverter
                     .ToList()
             };
             Console.WriteLine($"[SOP] 跨相机协同规则已加载: enabled={workflow.CrossCamera.Enabled} | rules={workflow.CrossCamera.Rules.Count}");
-        }
-
-        // ⭐ 转换违规定义（如果有）
-        if (yamlSop.Violations != null)
-        {
-            Console.WriteLine($"[SOP] 加载了 {yamlSop.Violations.Count} 个违规定义");
-        }
-
-        // ⭐ 转换关键点配置（如果有）
-        if (yamlSop.Keypoints != null)
-        {
-            Console.WriteLine($"[SOP] 加载了关键点配置: {yamlSop.Keypoints.Required?.Count ?? 0} 个必需关键点");
-        }
-
-        // ⭐ 转换可视化配置（如果有）
-        if (yamlSop.Visualization != null)
-        {
-            Console.WriteLine($"[SOP] 加载了可视化配置");
         }
 
         return workflow;
