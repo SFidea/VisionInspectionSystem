@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using VisionInspection.Core.Models;
@@ -27,6 +28,7 @@ namespace VisionInspection.UI.Views
 
         // 计时器相关
         private DispatcherTimer? _timer;
+        private DispatcherTimer? _thumbnailTimer;
         private DateTime _timerStartTime;
         private bool _isTimerRunning = false;
 
@@ -60,6 +62,13 @@ namespace VisionInspection.UI.Views
                 Interval = TimeSpan.FromMilliseconds(100) // 100ms更新一次
             };
             _timer.Tick += Timer_Tick;
+
+            // 缩略图刷新定时器：检测运行时每 200ms 取最新帧渲染到面板缩略图（节流避免每帧重建）
+            _thumbnailTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(200)
+            };
+            _thumbnailTimer.Tick += ThumbnailTimer_Tick;
         }
 
         /// <summary>
@@ -72,6 +81,79 @@ namespace VisionInspection.UI.Views
                 var elapsed = DateTime.Now - _timerStartTime;
                 TimerTextBlock.Text = FormatTimeSpan(elapsed);
             }
+        }
+
+        /// <summary>
+        /// 缩略图刷新：检测运行时节流从主视图取最新帧，编码为缩略图显示到面板。
+        /// 仅当开关 EnableThumbnail 开启时执行；帧可能被后台线程替换/释放，读取失败忽略。
+        /// </summary>
+        private void ThumbnailTimer_Tick(object? sender, EventArgs e)
+        {
+            if (!SopCaptureConfigManager.Instance.Config.EnableThumbnail) return;
+
+            var vm = GetMainViewModel();
+            if (vm == null) return;
+
+            var frame = vm.RoiEditorViewModel?.CurrentImage ?? vm.CurrentImage;
+            if (frame == null)
+            {
+                ThumbnailImage.Source = null;
+                ThumbnailPlaceholder.Visibility = Visibility.Visible;
+                return;
+            }
+
+            try
+            {
+                var bmp = SkBitmapToBitmapImage(frame, 360);
+                if (bmp != null)
+                {
+                    ThumbnailImage.Source = bmp;
+                    ThumbnailPlaceholder.Visibility = Visibility.Collapsed;
+                }
+            }
+            catch
+            {
+                // 帧正在被后台线程释放时读取可能失败，下一拍重试
+            }
+        }
+
+        /// <summary>
+        /// 把 SKBitmap 缩放为最大宽度 maxWidth 的缩略图并转成 WPF BitmapImage。
+        /// 内部先 Copy 出独立副本，避免外部帧被并发释放导致异常。
+        /// </summary>
+        private static BitmapImage? SkBitmapToBitmapImage(SKBitmap src, int maxWidth)
+        {
+            using var copy = src.Copy();
+            if (copy == null) return null;
+
+            if (copy.Width > maxWidth)
+            {
+                var nh = (int)(copy.Height * (double)maxWidth / copy.Width);
+                using var resized = copy.Resize(new SKImageInfo(maxWidth, nh), SKFilterQuality.Medium);
+                return resized == null ? null : EncodeToBitmapImage(resized);
+            }
+            return EncodeToBitmapImage(copy);
+        }
+
+        /// <summary>
+        /// 将 SKBitmap 编码为 PNG 并包装为可冻结的 WPF BitmapImage。
+        /// </summary>
+        private static BitmapImage? EncodeToBitmapImage(SKBitmap bmp)
+        {
+            using var img = SKImage.FromBitmap(bmp);
+            using var data = img.Encode(SKEncodedImageFormat.Png, 100);
+            if (data == null) return null;
+
+            var ms = new MemoryStream();
+            data.SaveTo(ms);
+            ms.Position = 0;
+            var bi = new BitmapImage();
+            bi.BeginInit();
+            bi.CacheOption = BitmapCacheOption.OnLoad; // 立即解码，脱离源流
+            bi.StreamSource = ms;
+            bi.EndInit();
+            bi.Freeze();
+            return bi;
         }
 
         /// <summary>
@@ -151,6 +233,37 @@ namespace VisionInspection.UI.Views
                 return;
             var vm = GetMainViewModel();
             if (vm != null) vm.SopWorkflowPath = _currentYamlPath;
+
+            // 初始化缩略图 / 违规存图 开关状态（来自持久化配置）
+            var capCfg = SopCaptureConfigManager.Instance.Config;
+            ThumbnailCheckBox.IsChecked = capCfg.EnableThumbnail;
+            ViolationCaptureCheckBox.IsChecked = capCfg.EnableViolationCapture;
+            ThumbnailHost.Visibility = capCfg.EnableThumbnail ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        /// <summary>
+        /// 「检测缩略图」开关切换：保存配置并折叠/展开缩略图区。
+        /// </summary>
+        private void ThumbnailCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            var enabled = ThumbnailCheckBox.IsChecked == true;
+            SopCaptureConfigManager.Instance.Config.EnableThumbnail = enabled;
+            SopCaptureConfigManager.Instance.Save();
+            ThumbnailHost.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+            if (!enabled)
+            {
+                ThumbnailImage.Source = null;
+                ThumbnailPlaceholder.Visibility = Visibility.Visible;
+            }
+        }
+
+        /// <summary>
+        /// 「违规保存截图」开关切换：仅保存配置。
+        /// </summary>
+        private void ViolationCaptureCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            SopCaptureConfigManager.Instance.Config.EnableViolationCapture = ViolationCaptureCheckBox.IsChecked == true;
+            SopCaptureConfigManager.Instance.Save();
         }
 
         /// <summary>
@@ -1354,6 +1467,9 @@ namespace VisionInspection.UI.Views
                 SetStatus("检测已停止", new SolidColorBrush(Colors.Gray));
                 SetResult("--", new SolidColorBrush(Colors.Gray));
                 StopTimer();
+                _thumbnailTimer?.Stop();
+                ThumbnailImage.Source = null;
+                ThumbnailPlaceholder.Visibility = Visibility.Visible;
                 UpdateRunButtonState(false);
                 AddLog("SOP 实时检测已停止");
                 return;
@@ -1389,6 +1505,7 @@ namespace VisionInspection.UI.Views
                 SetResult("检测中...", new SolidColorBrush(Colors.Gray));
                 ClearStepDurations();
                 StartTimer();
+                _thumbnailTimer?.Start();
                 UpdateRunButtonState(true);
                 AddLog($"SOP 实时检测已启动 | 模式: {viewModel.SOPModuleInstance?.DetectionMode}");
             }
@@ -1472,6 +1589,9 @@ namespace VisionInspection.UI.Views
                 {
                     await viewModel.StopSOPDetectionAsync();
                 }
+                _thumbnailTimer?.Stop();
+                ThumbnailImage.Source = null;
+                ThumbnailPlaceholder.Visibility = Visibility.Visible;
 
                 // 2) 复位状态机工作流（回到第一步）
                 viewModel.ResetSOPWorkflow();
@@ -1539,6 +1659,8 @@ namespace VisionInspection.UI.Views
                     SetResult("FAIL", new SolidColorBrush(Colors.Red));
                     SetStatus("检测失败", new SolidColorBrush(Colors.Red));
                     AddLog($"❌ SOP 检测不通过，违规数: {e.Violations.Count} | 总耗时: {TimerTextBlock.Text}");
+                    // 违规（NG）自动保存当前帧截图，作为证据留存
+                    SaveViolationSnapshot(e);
                 }
 
                 // ⭐ 修复：最后一步完成时 SOPStateMachine.CompleteCurrentStep 走 Completed 分支，
@@ -1561,6 +1683,50 @@ namespace VisionInspection.UI.Views
                 SetResult("NG", new SolidColorBrush(Colors.Red));
                 AddLog($"⚠ 违规: [{e.Violation.Type}] {e.Violation.Description}");
             });
+        }
+
+        /// <summary>
+        /// 违规（NG）时把当前帧保存为 PNG 截图，按日期分子目录存放。
+        /// 仅当开关 EnableViolationCapture 开启时执行；帧可能被后台线程释放，失败静默忽略。
+        /// </summary>
+        private void SaveViolationSnapshot(VisionInspection.Modules.SOP.Models.SOPCompletedEventArgs e)
+        {
+            try
+            {
+                var cfg = SopCaptureConfigManager.Instance.Config;
+                if (!cfg.EnableViolationCapture) return;
+
+                var vm = GetMainViewModel();
+                if (vm == null) return;
+
+                var frame = vm.RoiEditorViewModel?.CurrentImage ?? vm.CurrentImage;
+                if (frame == null) return;
+
+                // 复制独立副本，避免持有外部帧引用被后台线程释放
+                using var copy = frame.Copy();
+                if (copy == null) return;
+
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                var root = string.IsNullOrWhiteSpace(cfg.CaptureDirectory) ? "sop_captures" : cfg.CaptureDirectory;
+                var dateDir = System.IO.Path.Combine(baseDir, root, DateTime.Now.ToString("yyyy-MM-dd"));
+                Directory.CreateDirectory(dateDir);
+
+                var ts = DateTime.Now.ToString("HHmmss_fff");
+                var name = string.IsNullOrEmpty(e.WorkflowName) ? "sop" : SanitizeFileName(e.WorkflowName);
+                var fileName = $"{ts}_NG_{name}.png";
+                var filePath = System.IO.Path.Combine(dateDir, fileName);
+
+                using var img = SKImage.FromBitmap(copy);
+                using var data = img.Encode(SKEncodedImageFormat.Png, 100);
+                using var fs = File.OpenWrite(filePath);
+                data.SaveTo(fs);
+
+                AddLog($"📸 违规截图已保存: {fileName}");
+            }
+            catch (Exception ex)
+            {
+                AddLog($"违规截图保存失败: {ex.Message}");
+            }
         }
 
         /// <summary>

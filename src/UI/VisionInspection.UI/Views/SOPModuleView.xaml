@@ -13,6 +13,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
@@ -124,9 +125,39 @@
             </Grid>
         </Border>
 
+        <!-- SOP 检测缩略图 + 开关 -->
+        <Border Grid.Row="3" BorderBrush="#E8E8E8" BorderThickness="0,0,0,1" Padding="10">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- 开关行：缩略图显示 / 违规自动存图 -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
+                    <CheckBox x:Name="ThumbnailCheckBox" Content="🖼 检测缩略图"
+                              Margin="0,0,14,0" VerticalAlignment="Center"
+                              Checked="ThumbnailCheckBox_Changed" Unchecked="ThumbnailCheckBox_Changed"/>
+                    <CheckBox x:Name="ViolationCaptureCheckBox" Content="💾 违规保存截图"
+                              VerticalAlignment="Center"
+                              Checked="ViolationCaptureCheckBox_Changed" Unchecked="ViolationCaptureCheckBox_Changed"/>
+                </StackPanel>
+
+                <!-- 缩略图显示区 -->
+                <Border Grid.Row="1" x:Name="ThumbnailHost" BorderBrush="#CCC" BorderThickness="1"
+                        Background="#FAFAFA" Height="160">
+                    <Grid>
+                        <Image x:Name="ThumbnailImage" Stretch="Uniform" Margin="4"/>
+                        <TextBlock x:Name="ThumbnailPlaceholder" Text="检测运行时显示实时缩略图"
+                                   Foreground="#BBB" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+
         <!-- 检测流程列表 - 垂直列表布局（右侧区域全部让给 SOP 流程；
              运行日志已移至独立窗口 SopLogWindow，此处不再占用高度） -->
-        <Border Grid.Row="3" BorderBrush="#E8E8E8" BorderThickness="0,0,0,1">
+        <Border Grid.Row="4" BorderBrush="#E8E8E8" BorderThickness="0,0,0,1">
             <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
                 <StackPanel x:Name="StepsPanel" Orientation="Vertical" Margin="5">
                     <!-- 步骤项将通过代码动态添加 -->
