@@ -152,6 +152,7 @@ public class SOPModule : IDetectionModule
     };
 
     public event EventHandler<StepChangedEventArgs>? StepChanged;
+    public event EventHandler<StepCompletedEventArgs>? StepCompleted;
     public event EventHandler<ViolationEventArgs>? ViolationDetected;
     public event EventHandler<SOPCompletedEventArgs>? WorkflowCompleted;
     public event EventHandler<StateChangedEventArgs>? SOPStateChanged;
@@ -685,6 +686,12 @@ public class SOPModule : IDetectionModule
         _stateMachine.StepChanged += (s, e) =>
         {
             StepChanged?.Invoke(this, e);
+        };
+
+        // ⭐ 转发每步完成事件给 UI 层（逐步骤缩略图刷新等），保留内部 Modbus 触发订阅不变
+        _stateMachine.StepCompleted += (s, e) =>
+        {
+            StepCompleted?.Invoke(this, e);
         };
 
         _stateMachine.ViolationDetected += (s, e) =>

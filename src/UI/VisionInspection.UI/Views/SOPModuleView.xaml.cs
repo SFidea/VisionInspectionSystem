@@ -1526,6 +1526,7 @@ namespace VisionInspection.UI.Views
             viewModel.SOPModuleInstance.WorkflowCompleted += OnSOPWorkflowCompleted;
             viewModel.SOPModuleInstance.ViolationDetected += OnSOPViolationDetected;
             viewModel.SOPModuleInstance.StepChanged += OnSOPStepChanged;
+            viewModel.SOPModuleInstance.StepCompleted += OnSOPStepCompleted;
         }
 
         /// <summary>
@@ -1538,6 +1539,7 @@ namespace VisionInspection.UI.Views
             viewModel.SOPModuleInstance.WorkflowCompleted -= OnSOPWorkflowCompleted;
             viewModel.SOPModuleInstance.ViolationDetected -= OnSOPViolationDetected;
             viewModel.SOPModuleInstance.StepChanged -= OnSOPStepChanged;
+            viewModel.SOPModuleInstance.StepCompleted -= OnSOPStepCompleted;
         }
 
         /// <summary>
@@ -1643,8 +1645,8 @@ namespace VisionInspection.UI.Views
                     SetResult("PASS", new SolidColorBrush(Color.FromRgb(82, 196, 26)));
                     SetStatus("检测完成", new SolidColorBrush(Color.FromRgb(82, 196, 26)));
                     AddLog($"✅ SOP 检测全部通过 | 总耗时: {TimerTextBlock.Text}");
-                    // 缩略图仅展示检测成功那一帧（不持续刷新实时画面）
-                    RefreshThumbnailFromCurrentFrame();
+                    // 缩略图由各步成功事件 OnSOPStepCompleted 逐步刷新（末步成功也会刷新），
+                    // 此处不再整体刷新，避免重复。
                 }
                 else
                 {
@@ -1732,6 +1734,21 @@ namespace VisionInspection.UI.Views
                 AddLog($"步骤推进: {e.PreviousStepId} → {e.CurrentStepId} ({e.StepName})");
                 // 同步已结束步骤的耗时到对应卡片
                 SyncStepDurationsFromStateMachine();
+            });
+        }
+
+        /// <summary>
+        /// 每步完成事件处理：每步成功（无违规）即把当前帧刷新到缩略图。
+        /// 这与旧版「仅整体 PASS 才刷新」不同——现在每一步成功都会更新缩略图，
+        /// 便于操作员逐步核对。违规步骤不刷新（避免用 NG 帧覆盖成功帧）。
+        /// </summary>
+        private void OnSOPStepCompleted(object? sender, VisionInspection.Modules.SOP.Models.StepCompletedEventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                if (e.HasViolations) return;
+                RefreshThumbnailFromCurrentFrame();
+                AddLog($"📷 步骤 {e.Step.StepId} 完成(成功)，缩略图已更新");
             });
         }
 
