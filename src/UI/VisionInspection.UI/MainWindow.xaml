@@ -69,6 +69,7 @@
             </MenuItem>
 
             <MenuItem Header="相机" Click="CameraConfigMenuItem_Click"/>
+            <MenuItem Header="🎥 数据采集" Click="DataAcquisitionMenuItem_Click"/>
 
             <MenuItem Header="📊 数据看板" Click="DashboardMenuItem_Click"/>
 

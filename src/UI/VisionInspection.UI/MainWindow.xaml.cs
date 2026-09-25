@@ -226,6 +226,23 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// 数据采集菜单点击：打开录像 / 抽帧 / 自动预标注窗口（单实例）
+    /// </summary>
+    private void DataAcquisitionMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var win = Application.Current.Windows.OfType<DataAcquisitionWindow>().FirstOrDefault();
+        if (win == null)
+        {
+            win = new DataAcquisitionWindow { Owner = this };
+            win.Show();
+        }
+        else
+        {
+            win.Activate();
+        }
+    }
+
+    /// <summary>
     /// 将当前登录用户名同步给 MainViewModel（进而同步给 SOP 模块），使运行记录带上操作人。
     /// </summary>
     private void SyncCurrentOperator()
