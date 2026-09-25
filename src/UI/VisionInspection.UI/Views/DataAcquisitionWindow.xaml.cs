@@ -94,6 +94,12 @@ public partial class DataAcquisitionWindow : Window
         foreach (var p in new[] { "ultrafast", "veryfast", "fast", "medium" }) AddItem(cmbPreset, p, p);
         cmbPreset.SelectedIndex = 1;
 
+        AddItem(cmbSrcPixFmt, "RGB24（默认，相机帧原生）", "rgb24");
+        AddItem(cmbSrcPixFmt, "BGR24（画面偏色时切换）", "bgr24");
+        AddItem(cmbSrcPixFmt, "Gray8（黑白相机）", "gray");
+        AddItem(cmbSrcPixFmt, "自动（按通道数推断）", "auto");
+        cmbSrcPixFmt.SelectedIndex = 0;
+
         AddItem(cmbRecordFps, "跟随相机", "0");
         foreach (var f in new[] { "10", "15", "20", "25", "30" }) AddItem(cmbRecordFps, f + " fps", f);
         cmbRecordFps.SelectedIndex = 0;
@@ -142,6 +148,7 @@ public partial class DataAcquisitionWindow : Window
         sldCrf.Value = c.Record.Crf;
         txtCrf.Text = c.Record.Crf.ToString(CultureInfo.InvariantCulture);
         SelectByValue(cmbPreset, c.Record.Preset);
+        SelectByValue(cmbSrcPixFmt, c.Record.SourcePixelFormat);
         SelectByValue(cmbRecordFps, ((int)c.Record.RecordFps).ToString(CultureInfo.InvariantCulture));
         txtMaxDuration.Text = c.Record.MaxDurationSec.ToString(CultureInfo.InvariantCulture);
         txtMaxSize.Text = c.Record.MaxFileSizeMB.ToString(CultureInfo.InvariantCulture);
@@ -193,6 +200,7 @@ public partial class DataAcquisitionWindow : Window
         c.Record.VideoCodec = GetValue(cmbCodec);
         c.Record.Crf = (int)sldCrf.Value;
         c.Record.Preset = GetValue(cmbPreset);
+        c.Record.SourcePixelFormat = GetValue(cmbSrcPixFmt);
         c.Record.RecordFps = Num(cmbRecordFps, 0);
         c.Record.MaxDurationSec = Num(txtMaxDuration, 0);
         c.Record.MaxFileSizeMB = (long)Num(txtMaxSize, 0);

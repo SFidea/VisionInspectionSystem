@@ -64,6 +64,11 @@
                                     <ComboBox x:Name="cmbPreset" Width="110" Margin="4,0,0,0"/>
                                 </StackPanel>
                                 <StackPanel Style="{StaticResource RowStyle}">
+                                    <TextBlock Text="源像素格式" Width="90" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="cmbSrcPixFmt" Width="160"/>
+                                    <TextBlock Style="{StaticResource HintStyle}" Text="默认 RGB24（与相机帧一致）；录出来偏蓝/偏红说明通道反了，改 BGR24"/>
+                                </StackPanel>
+                                <StackPanel Style="{StaticResource RowStyle}">
                                     <TextBlock Text="CRF 画质" Width="90" VerticalAlignment="Center"/>
                                     <Slider x:Name="sldCrf" Width="150" Minimum="0" Maximum="51" Value="18" TickFrequency="1" IsSnapToTickEnabled="True"/>
                                     <TextBlock x:Name="txtCrf" Text="18" Width="28" Margin="6,0,0,0" VerticalAlignment="Center"/>

@@ -169,7 +169,7 @@ namespace VisionInspection.UI.Services
             try
             {
                 var channels = frame.Channels > 0 ? frame.Channels : (frame.IsColor ? 3 : 1);
-                var pixFmt = channels >= 3 ? "bgr24" : "gray";
+                var pixFmt = ResolveInputPixelFormat(channels, _cfg.SourcePixelFormat);
                 var fps = _cfg.RecordFps > 0 ? _cfg.RecordFps : 25.0;
                 var size = $"{frame.Width}x{frame.Height}";
 
@@ -236,6 +236,23 @@ namespace VisionInspection.UI.Services
             {
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 解析喂给 ffmpeg 的原始像素格式。
+        /// 默认 rgb24 —— 与全工程 CameraImageData.Data 的 RGB 约定一致（误用 bgr24 会导致红蓝互换）。
+        /// 显式指定 bgr24 / gray 时以配置为准，便于兼容特殊相机；auto 按通道数推断。
+        /// </summary>
+        private static string ResolveInputPixelFormat(int channels, string? configured)
+        {
+            var v = (configured ?? string.Empty).Trim().ToLowerInvariant();
+            return v switch
+            {
+                "bgr24" or "bgr" => "bgr24",
+                "rgb24" or "rgb" => "rgb24",
+                "gray" or "gray8" or "mono" or "mono8" => "gray",
+                _ => channels >= 3 ? "rgb24" : "gray"   // auto / 空 / 未知值
+            };
         }
 
         private void WriteFrame(CameraImageData frame)
