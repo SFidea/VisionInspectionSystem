@@ -82,6 +82,8 @@
 
             <MenuItem Header="相机" Click="CameraConfigMenuItem_Click"/>
 
+            <MenuItem Header="📊 数据看板" Click="DashboardMenuItem_Click"/>
+
             <MenuItem Header="配置">
                 <MenuItem Header="模型管理" Click="ModelManagementMenuItem_Click"/>
                 <MenuItem Header="通信设置" Click="CommunicationConfigMenuItem_Click"/>

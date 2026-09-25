@@ -73,6 +73,9 @@ public partial class MainWindow : Window
         {
             vm.InitCameraLayout();
         }
+
+        // 将当前登录用户同步给 SOP 模块（记录操作人，供数据看板按用户过滤）
+        SyncCurrentOperator();
     }
 
     private void UpdateMenuByPermission()
@@ -144,6 +147,8 @@ public partial class MainWindow : Window
                 // 登录成功，更新标题
                 Title = $"视觉检测系统 - [{_userManager.CurrentUser?.DisplayName} ({_userManager.CurrentUser?.RoleDisplayName})]";
                 UpdateMenuByPermission();
+                // 重新同步操作人
+                SyncCurrentOperator();
             }
             else
             {
@@ -176,6 +181,27 @@ public partial class MainWindow : Window
             "关于",
             MessageBoxButton.OK,
             MessageBoxImage.Information);
+    }
+
+    /// <summary>
+    /// 数据看板菜单点击：打开 SOP 检测数据看板窗口
+    /// </summary>
+    private void DashboardMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var dashboard = new SopDashboardWindow();
+        dashboard.Owner = this;
+        dashboard.Show();
+    }
+
+    /// <summary>
+    /// 将当前登录用户名同步给 MainViewModel（进而同步给 SOP 模块），使运行记录带上操作人。
+    /// </summary>
+    private void SyncCurrentOperator()
+    {
+        if (DataContext is MainViewModel vm)
+        {
+            vm.CurrentOperator = _userManager.CurrentUser?.Username ?? "";
+        }
     }
 
     private CameraConfigWindow? _cameraConfigWindow;

@@ -54,6 +54,10 @@ public class SOPModule : IDetectionModule
     // SOP 运行数据记录器：每个周期(OK/NG)+每步耗时写入按天文件
     private SopRunRecorder? _runRecorder;
 
+    // 当前操作人（登录用户名），由上层（MainViewModel/MainWindow）在登录后写入，
+    // 在每次 WorkflowCompleted 触发时注入事件参数，供记录器落盘与看板按用户过滤。
+    private string _currentOperator = "";
+
     // 文件日志记录器
     private static readonly object _sopLogLock = new();
     private const string _sopDebugLogPath = "sop_module_debug.log";
@@ -83,6 +87,16 @@ public class SOPModule : IDetectionModule
     public ModuleState State { get; private set; } = ModuleState.Uninitialized;
     public SOPStateMachine? StateMachine => _stateMachine;
     public SOPWorkflow? CurrentWorkflow => _currentWorkflow;
+
+    /// <summary>
+    /// 当前操作人（登录用户名）。上层在用户登录后写入，每次运行周期完成时由模块注入到
+    /// WorkflowCompleted 事件参数，供 SOP 运行记录器落盘、数据看板按用户过滤。
+    /// </summary>
+    public string CurrentOperator
+    {
+        get => _currentOperator;
+        set => _currentOperator = value ?? "";
+    }
 
     /// <summary>
     /// 统一日志输出方法（同时输出到 Console、Debug 和文件）
@@ -679,6 +693,8 @@ public class SOPModule : IDetectionModule
 
         _stateMachine.WorkflowCompleted += (s, e) =>
         {
+            // 注入操作人（登录用户名），供记录器落盘与看板按用户过滤
+            e.Operator = _currentOperator;
             WorkflowCompleted?.Invoke(this, e);
         };
 

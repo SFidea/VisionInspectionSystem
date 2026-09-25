@@ -59,6 +59,7 @@ public class SopRunRecorder
                 EndTime = endTime,
                 WorkflowName = e.WorkflowName,
                 WorkflowId = e.WorkflowId,
+                Operator = e.Operator,
                 Result = result,
                 TotalDurationSec = Math.Round((endTime - startTime).TotalSeconds, 2),
                 StepCount = e.StepHistory.Count,
@@ -66,7 +67,8 @@ public class SopRunRecorder
                 {
                     StepId = s.StepId,
                     StepName = s.StepName,
-                    DurationSec = Math.Round(s.Duration.TotalSeconds, 2)
+                    DurationSec = Math.Round(s.Duration.TotalSeconds, 2),
+                    StandardDurationSec = Math.Round(s.StandardDurationSec, 2)
                 }).ToList(),
                 Violations = e.Violations.Select(v => new SopViolationSummary
                 {
@@ -109,7 +111,7 @@ public class SopRunRecorder
             var sb = new StringBuilder();
             if (csvNew)
             {
-                sb.AppendLine("CycleIndex,CycleTime,WorkflowName,Result,TotalDurationSec,StepIndex,StepId,StepName,StepDurationSec,ViolationCount,ViolationTypes");
+                sb.AppendLine("CycleIndex,CycleTime,Operator,WorkflowName,Result,TotalDurationSec,StepIndex,StepId,StepName,StepDurationSec,StandardDurationSec,ViolationCount,ViolationTypes");
             }
             var violationTypes = string.Join("|", record.Violations.Select(v => v.Type));
             for (int i = 0; i < record.Steps.Count; i++)
@@ -118,6 +120,7 @@ public class SopRunRecorder
                 sb.AppendLine(string.Join(",",
                     CsvField(sequence.ToString()),
                     CsvField(record.EndTime.ToString("yyyy-MM-dd HH:mm:ss")),
+                    CsvField(record.Operator),
                     CsvField(record.WorkflowName),
                     CsvField(record.Result),
                     CsvField(record.TotalDurationSec.ToString("F2")),
@@ -125,6 +128,7 @@ public class SopRunRecorder
                     CsvField(s.StepId.ToString()),
                     CsvField(s.StepName),
                     CsvField(s.DurationSec.ToString("F2")),
+                    CsvField(s.StandardDurationSec.ToString("F2")),
                     CsvField(record.Violations.Count.ToString()),
                     CsvField(violationTypes)));
             }
@@ -151,6 +155,8 @@ public class SopCycleRecord
     /// <summary>所属 SOP 流程名称。</summary>
     public string WorkflowName { get; set; } = "";
     public string WorkflowId { get; set; } = "";
+    /// <summary>操作人（登录用户名）；改动前产生的历史数据该字段为空（归为"未知用户"）。</summary>
+    public string Operator { get; set; } = "";
     /// <summary>"OK" 或 "NG"。</summary>
     public string Result { get; set; } = "";
     /// <summary>周期总耗时（秒）。</summary>
@@ -160,14 +166,16 @@ public class SopCycleRecord
     public List<SopViolationSummary> Violations { get; set; } = new();
 }
 
-/// <summary>周期内单步耗时记录。</summary>
-public class SopStepDuration
-{
-    public int StepId { get; set; }
-    public string StepName { get; set; } = "";
-    /// <summary>该步骤耗时（秒）。</summary>
-    public double DurationSec { get; set; }
-}
+    /// <summary>周期内单步耗时记录。</summary>
+    public class SopStepDuration
+    {
+        public int StepId { get; set; }
+        public string StepName { get; set; } = "";
+        /// <summary>该步骤耗时（秒）。</summary>
+        public double DurationSec { get; set; }
+        /// <summary>该步骤标准耗时（秒），来自配方 standard_duration_ms（缺省回退 duration_ms）。</summary>
+        public double StandardDurationSec { get; set; }
+    }
 
 /// <summary>导致 NG 的违规摘要。</summary>
 public class SopViolationSummary

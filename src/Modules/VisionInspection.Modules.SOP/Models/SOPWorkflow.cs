@@ -35,6 +35,12 @@ public class SOPStep
     public string Description { get; set; } = "";
     public int ExpectedDurationSec { get; set; } = 10;
     public int TimeoutSec { get; set; } = 30;
+
+    /// <summary>
+    /// 该步骤的标准耗时（秒），来自配方 YAML 的 standard_duration_ms（缺省回退 detection.duration_ms）。
+    /// 供 SOP 运行记录器落盘、以及数据看板"标准 vs 实际"对比使用。
+    /// </summary>
+    public double StandardDurationSec { get; set; } = 0;
     public int Order { get; set; }
     public List<StepCondition> PassConditions { get; set; } = new();
     public List<ViolationRule> ViolationRules { get; set; } = new();

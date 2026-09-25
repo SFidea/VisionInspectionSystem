@@ -264,7 +264,8 @@ public class SOPStateMachine
             StartTime = StepStartTime,
             EndTime = timestamp,
             Duration = timestamp - StepStartTime,
-            IsPass = true
+            IsPass = true,
+            StandardDurationSec = currentStep.StandardDurationSec
         };
         _stepHistory.Add(record);
 
@@ -385,19 +386,21 @@ public class TrackedObject
     }
 }
 
-/// <summary>
-/// 步骤执行记录
-/// </summary>
-public class StepExecutionRecord
-{
-    public int StepId { get; set; }
-    public string StepName { get; set; } = "";
-    public DateTime StartTime { get; set; }
-    public DateTime EndTime { get; set; }
-    public TimeSpan Duration { get; set; }
-    public bool IsPass { get; set; }
-    public List<ViolationRecord> Violations { get; set; } = new();
-}
+    /// <summary>
+    /// 步骤执行记录
+    /// </summary>
+    public class StepExecutionRecord
+    {
+        public int StepId { get; set; }
+        public string StepName { get; set; } = "";
+        public DateTime StartTime { get; set; }
+        public DateTime EndTime { get; set; }
+        public TimeSpan Duration { get; set; }
+        public bool IsPass { get; set; }
+        /// <summary>该步骤的标准耗时（秒），来自配方 standard_duration_ms（缺省回退 duration_ms）。</summary>
+        public double StandardDurationSec { get; set; } = 0;
+        public List<ViolationRecord> Violations { get; set; } = new();
+    }
 
 /// <summary>
 /// 违规记录
@@ -447,6 +450,9 @@ public class ViolationEventArgs : EventArgs
         public string WorkflowName { get; set; } = "";
         /// <summary>本次运行所属的 SOP 流程 Id（来自 SOPWorkflow.Id）。</summary>
         public string WorkflowId { get; set; } = "";
+
+        /// <summary>本次运行的操作人（登录用户名），由 SOPModule 在触发事件前注入，供运行记录器落盘与看板按用户过滤。</summary>
+        public string Operator { get; set; } = "";
 
         public SOPCompletedEventArgs(IReadOnlyList<StepExecutionRecord> stepHistory, IReadOnlyList<ViolationRecord> violations)
         {

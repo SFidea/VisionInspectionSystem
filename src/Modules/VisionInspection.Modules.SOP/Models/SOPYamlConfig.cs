@@ -68,6 +68,13 @@ public class SopyamlStep
     [YamlMember(Alias = "timeout")]
     public int Timeout { get; set; } = 30;
 
+    /// <summary>
+    /// 该步骤的"标准耗时"（毫秒）。数据看板用它做"标准 vs 实际"对比。
+    /// 缺省 0 表示未显式设定，转换器回退到该步 detection.duration_ms。
+    /// </summary>
+    [YamlMember(Alias = "standard_duration_ms")]
+    public int StandardDurationMs { get; set; } = 0;
+
     [YamlMember(Alias = "transitions")]
     public List<string> Transitions { get; set; } = new();
 
@@ -545,6 +552,14 @@ public static class SOPYamlConverter
                 ModelPath = string.IsNullOrWhiteSpace(yamlStep.Model) ? null : yamlStep.Model.Trim()
             };
 
+            // 标准耗时：优先 YAML 的 standard_duration_ms，缺省回退该步 detection.duration_ms
+            double standardSec = 0;
+            if (yamlStep.StandardDurationMs > 0)
+                standardSec = yamlStep.StandardDurationMs / 1000.0;
+            else if (yamlStep.Detection != null)
+                standardSec = yamlStep.Detection.DurationMs / 1000.0;
+            step.StandardDurationSec = standardSec;
+
             // 转换检测条件
             if (yamlStep.Detection != null)
             {
@@ -919,6 +934,14 @@ public static class SOPYamlConverter
                     : step.CameraId.Trim(),
                 Model = string.IsNullOrWhiteSpace(step.ModelPath) ? null : step.ModelPath.Trim()
             };
+
+            // 回写 standard_duration_ms（仅在设定了标准耗时、与 duration_ms 不同才写，避免污染文件）
+            if (step.StandardDurationSec > 0)
+            {
+                var stdMs = (int)Math.Round(step.StandardDurationSec * 1000);
+                if (yamlStep.Detection == null || stdMs != yamlStep.Detection.DurationMs)
+                    yamlStep.StandardDurationMs = stdMs;
+            }
 
             // 转换第一个条件为检测配置
             if (step.PassConditions.Count > 0)

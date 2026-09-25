@@ -77,6 +77,21 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     public SOPModule? SOPModuleInstance => _sopModule;
 
+    /// <summary>
+    /// 当前登录用户名（操作人）。由 MainWindow 在登录后写入，并同步给 SOP 模块，
+    /// 使 SOP 运行记录带上操作人，供数据看板按用户过滤。
+    /// </summary>
+    private string _currentOperator = "";
+    public string CurrentOperator
+    {
+        get => _currentOperator;
+        set
+        {
+            _currentOperator = value ?? "";
+            if (_sopModule != null) _sopModule.CurrentOperator = _currentOperator;
+        }
+    }
+
     [ObservableProperty]
     private ROIEditorViewModel _roiEditorViewModel = null!;
 
@@ -1628,6 +1643,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
                 await _sopModule.InitializeAsync(defaultConfig, _cameraManager.CurrentCameraService!);
                 File.AppendAllText(logFile, $"{DateTime.Now:HH:mm:ss.fff} [MainViewModel] InitializeAsync完成，State={_sopModule.State}\n");
                 AttachSopModuleEvents(_sopModule);
+                _sopModule.CurrentOperator = _currentOperator;
             }
             else
             {
@@ -1646,6 +1662,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
                 _sopModule = new SOPModule();
                 await _sopModule.InitializeAsync(config, _cameraManager.CurrentCameraService!);
                 AttachSopModuleEvents(_sopModule);
+                _sopModule.CurrentOperator = _currentOperator;
             }
 
             // 加载区域配置（如果存在）
@@ -1789,6 +1806,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
                 _sopModule = new SOPModule();
                 await _sopModule.InitializeAsync(config, _cameraManager.CurrentCameraService!);
                 AttachSopModuleEvents(_sopModule);
+                _sopModule.CurrentOperator = _currentOperator;
 
                 Console.WriteLine($"[MainViewModel] SOP模块创建完成，当前模式: {_sopModule.DetectionMode}");
                 Console.WriteLine($"[MainViewModel] 保存的配置: {(_savedSOPDetectionConfig.HasValue ? "存在" : "不存在")}");

@@ -63,6 +63,7 @@ sop:
     # 步骤1: 等待状态（人在场才进入下一步）
     - id: "idle"
       name: "等待"
+      standard_duration_ms: 2000          # 示例标准耗时：等待人员开始操作约 2 秒
       description: "等待人员开始操作"
       transitions: ["pickup_cup"]
       detection:
@@ -73,6 +74,7 @@ sop:
     # 步骤2: 从桌上拿起水杯
     - id: "pickup_cup"
       name: "拿起水杯"
+      standard_duration_ms: 3000          # 示例标准耗时：从桌面拿起水杯约 3 秒
       description: "从桌面拿起水杯"
       transitions: ["drink_water"]
       detection:
@@ -88,6 +90,7 @@ sop:
     # 步骤3: 用杯子喝水
     - id: "drink_water"
       name: "用杯子喝水"
+      standard_duration_ms: 5000          # 示例标准耗时：喝水动作约 5 秒
       description: "将杯子送到嘴边喝水"
       transitions: ["put_down_cup"]
       detection:
@@ -100,6 +103,7 @@ sop:
     # 步骤4: 把水杯放回原位
     - id: "put_down_cup"
       name: "放回水杯"
+      standard_duration_ms: 3000          # 示例标准耗时：放回水杯约 3 秒
       description: "将水杯放回桌面原位"
       transitions: ["complete"]
       detection:
@@ -116,6 +120,7 @@ sop:
     # 步骤5: 完成
     - id: "complete"
       name: "完成"
+      standard_duration_ms: 0              # 完成步无标准耗时（duration_ms=0 立即通过）
       description: "水杯使用流程完成"
       transitions: ["idle"]
       detection:
