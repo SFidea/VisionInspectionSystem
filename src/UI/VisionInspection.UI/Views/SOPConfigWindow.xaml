@@ -411,20 +411,63 @@
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel Margin="15,10,15,15">
                             <TextBlock Text="运行时手部检测设置" Style="{StaticResource SectionHeader}"/>
-                            <TextBlock Text="这些参数不写入 YAML，仅影响当前程序的实时检测行为。" Style="{StaticResource HintText}" Margin="0,0,0,8"/>
+                            <TextBlock Text="这些参数不写入 YAML，仅影响当前程序的实时检测行为（修改后点「✓ 应用修改」即时生效）。" Style="{StaticResource HintText}" Margin="0,0,0,8"/>
                             <CheckBox x:Name="EnableHandPoseCheckBox" Content="启用手部检测"
                                       Checked="EnableHandPoseCheckBox_Checked" Unchecked="EnableHandPoseCheckBox_Unchecked"
                                       IsChecked="True" Margin="0,8,0,0"/>
-                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                                <TextBlock Text="最大手数:" VerticalAlignment="Center"/>
-                                <ComboBox x:Name="MaxHandsComboBox" Width="80" Height="28" Margin="8,0,0,0"
-                                          VerticalContentAlignment="Center">
-                                    <ComboBoxItem Content="1" IsSelected="True"/>
-                                    <ComboBoxItem Content="2"/>
-                                </ComboBox>
-                            </StackPanel>
-                            <CheckBox x:Name="UseGpuCheckBox" Content="GPU加速" IsChecked="True" Margin="0,12,0,0"/>
-                            <Button x:Name="AdvancedParamsButton" Content="⚙️ 手部检测高级参数"
+
+                            <!-- 检测后端 -->
+                            <TextBlock Text="检测后端（Backend）" Style="{StaticResource FieldLabel}" Margin="0,14,0,4"/>
+                            <ComboBox x:Name="BackendComboBox" Style="{StaticResource FieldCombo}">
+                                <ComboBoxItem Content="MediaPipe（默认：两阶段，握拳/横向手泛化好）" Tag="MediaPipe" IsSelected="True"/>
+                                <ComboBoxItem Content="YOLO-pose 兜底（手腕检测 + Landmark 精修手指）" Tag="YoloPose"/>
+                                <ComboBoxItem Content="Auto（MediaPipe 优先，失败自动 YOLO-pose）" Tag="Auto"/>
+                            </ComboBox>
+
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="12"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="最大手数（MaxNumHands）" Style="{StaticResource FieldLabel}"/>
+                                    <ComboBox x:Name="MaxHandsComboBox" Style="{StaticResource FieldCombo}">
+                                        <ComboBoxItem Content="1" Tag="1"/>
+                                        <ComboBoxItem Content="2" Tag="2" IsSelected="True"/>
+                                        <ComboBoxItem Content="3" Tag="3"/>
+                                        <ComboBoxItem Content="4" Tag="4"/>
+                                    </ComboBox>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <CheckBox x:Name="UseGpuCheckBox" Content="GPU 加速" IsChecked="True" VerticalAlignment="Bottom" Margin="0,18,0,0"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- 关键点置信度阈值 -->
+                            <TextBlock Text="关键点置信度阈值（ConfidenceThreshold）" Style="{StaticResource FieldLabel}" Margin="0,14,0,4"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Slider x:Name="KeyConfSlider" Minimum="0.1" Maximum="0.9" Value="0.5" Grid.Column="0"
+                                        Margin="0,4,10,0" TickFrequency="0.05" IsSnapToTickEnabled="True"
+                                        ValueChanged="KeyConfSlider_ValueChanged"/>
+                                <TextBlock x:Name="KeyConfValue" Grid.Column="1" Text="0.50" VerticalAlignment="Center"
+                                           FontWeight="Bold" Foreground="#1890FF"/>
+                            </Grid>
+                            <TextBlock Text="关键点平均置信度下限，低于此值的关键点/手被丢弃；握拳等低置信场景可调低。" Style="{StaticResource HintText}"/>
+
+                            <!-- 检测左右手 -->
+                            <TextBlock Text="检测手型" Style="{StaticResource FieldLabel}" Margin="0,14,0,4"/>
+                            <CheckBox x:Name="DetectLeftHandCheckBox" Content="检测左手" IsChecked="True" Margin="0,2,0,0"/>
+                            <CheckBox x:Name="DetectRightHandCheckBox" Content="检测右手" IsChecked="True" Margin="0,6,0,0"/>
+
+                            <!-- 旋转增强 -->
+                            <CheckBox x:Name="RotationAugCheckBox" Content="旋转增强（检测不到时自动旋转 90° 重试）" IsChecked="True" Margin="0,12,0,0"/>
+
+                            <Button x:Name="AdvancedParamsButton" Content="⚙️ 手部检测高级参数（平滑/面部过滤/结构验证）"
                                     HorizontalAlignment="Left" Padding="14,7" Margin="0,18,0,0"
                                     Click="AdvancedParamsButton_Click"/>
                         </StackPanel>

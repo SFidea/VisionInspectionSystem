@@ -40,6 +40,8 @@ public class MediaPipeHandDetector : IDisposable
     private readonly float _minBoxAreaRatio;              // 最小检测框面积比例
     private readonly bool _enableFaceFilter;              // 是否启用面部过滤
     private readonly float _faceFilterUpperRatio;         // 面部过滤画面上边界比例
+    private readonly bool _detectLeftHand;               // 是否检测左手（UI 可配置）
+    private readonly bool _detectRightHand;              // 是否检测右手（UI 可配置）
 
     // 日志（控制台 + 文件，便于排查"手部检测是否执行"）
     private static readonly object _fileLogLock = new();
@@ -74,6 +76,8 @@ public class MediaPipeHandDetector : IDisposable
         _enableFaceFilter = config.EnableFaceFilter;
         _faceFilterUpperRatio = config.FaceFilterUpperRatio;
         _useGpu = config.UseGpu;
+        _detectLeftHand = config.DetectLeftHand;
+        _detectRightHand = config.DetectRightHand;
     }
 
     /// <summary>
@@ -263,6 +267,17 @@ public class MediaPipeHandDetector : IDisposable
 
                 if (accepted && hands.Count >= _maxNumHands)
                     break;
+            }
+
+            // 按 UI 选择的检测手型过滤（左手/右手）。Unknown 手型始终保留，
+            // 避免误删"模型未判定手型"的合法结果。仅当某一侧被取消勾选时才过滤。
+            if (!_detectLeftHand || !_detectRightHand)
+            {
+                hands = hands.Where(h =>
+                    h.HandType == HandType.Unknown ||
+                    (h.HandType == HandType.Left && _detectLeftHand) ||
+                    (h.HandType == HandType.Right && _detectRightHand)).ToList();
+                DebugLog($"手型过滤后剩余 {hands.Count} 只手 (detectLeft={_detectLeftHand}, detectRight={_detectRightHand})");
             }
 
             if (hands.Count == 0)

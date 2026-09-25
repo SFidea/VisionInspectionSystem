@@ -1408,7 +1408,11 @@ namespace VisionInspection.UI.Views
                     _detectionModeConfig.HandStructureWristTipRatio,
                     _detectionModeConfig.DetectionConfidenceThreshold,
                     _detectionModeConfig.MinBoxAreaRatio,
-                    _detectionModeConfig.RotationAugmentation
+                    _detectionModeConfig.RotationAugmentation,
+                    _detectionModeConfig.HandBackend,
+                    _detectionModeConfig.DetectLeftHand,
+                    _detectionModeConfig.DetectRightHand,
+                    _detectionModeConfig.ConfidenceThreshold
                 );
             }
 
@@ -1425,16 +1429,20 @@ namespace VisionInspection.UI.Views
                 {
                     viewModel.SOPModuleInstance.UpdateHandPoseConfig(new VisionInspection.Modules.SOP.Models.HandPoseEstimationConfig
                     {
+                        Backend = System.Enum.TryParse<VisionInspection.Modules.SOP.Models.HandDetectionBackend>(_detectionModeConfig.HandBackend, true, out var parsedBackend)
+                            ? parsedBackend : VisionInspection.Modules.SOP.Models.HandDetectionBackend.MediaPipe,
                         MaxNumHands = _detectionModeConfig.MaxNumHands,
                         UseGpu = _detectionModeConfig.UseGpu,
-                        ConfidenceThreshold = 0.5f,
+                        ConfidenceThreshold = _detectionModeConfig.ConfidenceThreshold,
                         EnableFaceFilter = _detectionModeConfig.EnableFaceFilter,
                         FaceFilterUpperRatio = _detectionModeConfig.FaceFilterUpperRatio,
                         EnableHandStructureCheck = _detectionModeConfig.EnableHandStructureCheck,
                         HandStructureWristTipRatio = _detectionModeConfig.HandStructureWristTipRatio,
                         DetectionConfidenceThreshold = _detectionModeConfig.DetectionConfidenceThreshold,
                         MinBoxAreaRatio = _detectionModeConfig.MinBoxAreaRatio,
-                        RotationAugmentation = _detectionModeConfig.RotationAugmentation
+                        RotationAugmentation = _detectionModeConfig.RotationAugmentation,
+                        DetectLeftHand = _detectionModeConfig.DetectLeftHand,
+                        DetectRightHand = _detectionModeConfig.DetectRightHand
                     });
                 }
             }

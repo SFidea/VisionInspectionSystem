@@ -1292,7 +1292,10 @@ public class SOPModule : IDetectionModule
         lock (_lockObject)
         {
             _config.HandPoseEstimation = config;
-            Console.WriteLine($"[SOP] 手部姿态估计配置更新: MaxNumHands={config.MaxNumHands}, UseGpu={config.UseGpu}");
+            // 同步检测后端选择（UI 切换 MediaPipe / YoloPose / Auto 时即时生效，
+            // 重建服务时用此字段而非启动时读取的 JSON 值）。
+            _handBackend = config.Backend;
+            Console.WriteLine($"[SOP] 手部姿态估计配置更新: Backend={config.Backend}, MaxNumHands={config.MaxNumHands}, UseGpu={config.UseGpu}");
 
             // 如果服务已初始化，异步重新初始化（不阻塞）
             if (_handPoseService != null)

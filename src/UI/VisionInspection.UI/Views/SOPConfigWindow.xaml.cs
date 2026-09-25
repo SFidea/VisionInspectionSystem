@@ -42,6 +42,12 @@ namespace VisionInspection.UI.Views
         public float HandMinBoxAreaRatio { get; private set; } = 0.0005f;
         public bool HandRotationAugmentation { get; private set; } = true;
 
+        // 新增：此前仅能从 JSON 配置（sop_config.json）读取、UI 无法设置的参数
+        public string HandBackend { get; private set; } = "MediaPipe";   // Auto / MediaPipe / YoloPose
+        public bool HandDetectLeftHand { get; private set; } = true;
+        public bool HandDetectRightHand { get; private set; } = true;
+        public float HandConfidenceThreshold { get; private set; } = 0.5f; // 关键点平均置信度阈值
+
         public SOPConfigWindow(string? yamlPath = null)
         {
             InitializeComponent();
@@ -74,6 +80,12 @@ namespace VisionInspection.UI.Views
             EnableHandPoseCheckBox.IsChecked = true;
             MaxHandsComboBox.SelectedIndex = 1; // 默认 2 只手
             UseGpuCheckBox.IsChecked = true;
+            BackendComboBox.SelectedIndex = 0;  // 默认 MediaPipe
+            DetectLeftHandCheckBox.IsChecked = true;
+            DetectRightHandCheckBox.IsChecked = true;
+            RotationAugCheckBox.IsChecked = true;
+            KeyConfSlider.Value = 0.5;
+            KeyConfValue.Text = "0.50";
         }
 
         // ==================== YAML 文件列表 ====================
@@ -1062,6 +1074,13 @@ namespace VisionInspection.UI.Views
                 MaxHandsComboBox.IsEnabled = false;
         }
 
+        private void KeyConfSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            HandConfidenceThreshold = (float)e.NewValue;
+            if (KeyConfValue != null)
+                KeyConfValue.Text = HandConfidenceThreshold.ToString("F2");
+        }
+
         private void EnableTimeoutCheckBox_Checked(object sender, RoutedEventArgs e)
         {
             if (TimeoutTextBox != null)
@@ -1092,7 +1111,11 @@ namespace VisionInspection.UI.Views
                 HandStructureWristTipRatio = HandStructureWristTipRatio,
                 DetectionConfidenceThreshold = HandDetectionConfidence,
                 MinBoxAreaRatio = HandMinBoxAreaRatio,
-                RotationAugmentation = HandRotationAugmentation
+                RotationAugmentation = HandRotationAugmentation,
+                HandBackend = GetSelectedTag(BackendComboBox) ?? "MediaPipe",
+                DetectLeftHand = DetectLeftHandCheckBox.IsChecked ?? true,
+                DetectRightHand = DetectRightHandCheckBox.IsChecked ?? true,
+                ConfidenceThreshold = HandConfidenceThreshold
             };
         }
 
@@ -1119,6 +1142,18 @@ namespace VisionInspection.UI.Views
             HandDetectionConfidence = config.DetectionConfidenceThreshold;
             HandMinBoxAreaRatio = config.MinBoxAreaRatio;
             HandRotationAugmentation = config.RotationAugmentation;
+
+            // 新增参数往返（UI 控件 + 字段同步）
+            SelectComboByTag(BackendComboBox, config.HandBackend);
+            HandBackend = config.HandBackend;
+            DetectLeftHandCheckBox.IsChecked = config.DetectLeftHand;
+            HandDetectLeftHand = config.DetectLeftHand;
+            DetectRightHandCheckBox.IsChecked = config.DetectRightHand;
+            HandDetectRightHand = config.DetectRightHand;
+            RotationAugCheckBox.IsChecked = config.RotationAugmentation;
+            KeyConfSlider.Value = config.ConfidenceThreshold;
+            KeyConfValue.Text = config.ConfidenceThreshold.ToString("F2");
+            HandConfidenceThreshold = config.ConfidenceThreshold;
         }
 
         private void AdvancedParamsButton_Click(object sender, RoutedEventArgs e)
@@ -1169,5 +1204,12 @@ namespace VisionInspection.UI.Views
         public float DetectionConfidenceThreshold { get; set; } = 0.08f;
         public float MinBoxAreaRatio { get; set; } = 0.0005f;
         public bool RotationAugmentation { get; set; } = true;
+
+        /// <summary>手部检测后端：Auto / MediaPipe / YoloPose（此前仅能从 JSON 读取）</summary>
+        public string HandBackend { get; set; } = "MediaPipe";
+        public bool DetectLeftHand { get; set; } = true;
+        public bool DetectRightHand { get; set; } = true;
+        /// <summary>关键点平均置信度阈值（ConfidenceThreshold，此前写死 0.5）</summary>
+        public float ConfidenceThreshold { get; set; } = 0.5f;
     }
 }

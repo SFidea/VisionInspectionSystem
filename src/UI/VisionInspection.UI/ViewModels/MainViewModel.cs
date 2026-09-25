@@ -47,7 +47,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         bool EnableFaceFilter, float FaceFilterUpperRatio,
         bool EnableHandStructureCheck, float HandStructureWristTipRatio,
         float DetectionConfidenceThreshold, float MinBoxAreaRatio,
-        bool RotationAugmentation)? _savedSOPDetectionConfig;
+        bool RotationAugmentation, string HandBackend, bool DetectLeftHand, bool DetectRightHand,
+        float ConfidenceThreshold)? _savedSOPDetectionConfig;
 
     private static readonly object _logLock = new();
     private const string _debugLogPath = "sop_frame_debug.log";
@@ -1520,14 +1521,16 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         bool enableFaceFilter = true, float faceFilterUpperRatio = 0.38f,
         bool enableHandStructureCheck = true, float handStructureWristTipRatio = 0.18f,
         float detectionConfidenceThreshold = 0.08f, float minBoxAreaRatio = 0.0005f,
-        bool rotationAugmentation = true)
+        bool rotationAugmentation = true, string handBackend = "MediaPipe",
+        bool detectLeftHand = true, bool detectRightHand = true, float confidenceThreshold = 0.5f)
     {
         _savedSOPDetectionConfig = (detectionMode, enableHandPose, maxNumHands,
             enableFaceFilter, faceFilterUpperRatio,
             enableHandStructureCheck, handStructureWristTipRatio,
             detectionConfidenceThreshold, minBoxAreaRatio,
-            rotationAugmentation);
-        Console.WriteLine($"[MainViewModel] SOP检测配置已保存: 模式={detectionMode}, 手部检测={enableHandPose}");
+            rotationAugmentation, handBackend, detectLeftHand, detectRightHand,
+            confidenceThreshold);
+        Console.WriteLine($"[MainViewModel] SOP检测配置已保存: 模式={detectionMode}, 手部检测={enableHandPose}, 后端={handBackend}");
     }
 
     /// <summary>
@@ -1826,8 +1829,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable
                     {
                         _sopModule.UpdateHandPoseConfig(new HandPoseEstimationConfig
                         {
+                            Backend = System.Enum.TryParse<HandDetectionBackend>(savedConfig.HandBackend, true, out var parsedBackend)
+                                ? parsedBackend : HandDetectionBackend.MediaPipe,
                             MaxNumHands = savedConfig.MaxNumHands,
-                            ConfidenceThreshold = 0.5f,
+                            ConfidenceThreshold = savedConfig.ConfidenceThreshold,
                             UseGpu = true,
                             EnableFaceFilter = savedConfig.EnableFaceFilter,
                             FaceFilterUpperRatio = savedConfig.FaceFilterUpperRatio,
@@ -1835,7 +1840,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable
                             HandStructureWristTipRatio = savedConfig.HandStructureWristTipRatio,
                             DetectionConfidenceThreshold = savedConfig.DetectionConfidenceThreshold,
                             MinBoxAreaRatio = savedConfig.MinBoxAreaRatio,
-                            RotationAugmentation = savedConfig.RotationAugmentation
+                            RotationAugmentation = savedConfig.RotationAugmentation,
+                            DetectLeftHand = savedConfig.DetectLeftHand,
+                            DetectRightHand = savedConfig.DetectRightHand
                         });
                     }
                 }
