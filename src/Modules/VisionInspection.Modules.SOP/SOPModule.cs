@@ -539,7 +539,11 @@ public class SOPModule : IDetectionModule
                 FaceFilterUpperRatio = src.FaceFilterUpperRatio,
                 EnableHandStructureCheck = src.EnableHandStructureCheck,
                 HandStructureWristTipRatio = src.HandStructureWristTipRatio,
-                RawModelPath = src.RawModelPath
+                RawModelPath = src.RawModelPath,
+                InferenceInterval = src.InferenceInterval,
+                SmoothWindowSize = src.SmoothWindowSize,
+                SmoothAlpha = src.SmoothAlpha,
+                SkeletonConfidenceThreshold = src.SkeletonConfidenceThreshold
             };
 
             Log($"PalmModelPath: '{handConfig.PalmModelPath}', LandmarkModelPath: '{handConfig.LandmarkModelPath}'");

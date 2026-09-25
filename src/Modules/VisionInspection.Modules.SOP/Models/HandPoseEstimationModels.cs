@@ -234,6 +234,32 @@ public class HandPoseEstimationConfig
     /// </summary>
     public bool RotationAugmentation { get; set; } = true;
 
+    // ========== 时序平滑参数（由「手部检测高级参数」窗口调节，UI 真实生效）==========
+
+    /// <summary>
+    /// 推理间隔（跳帧）：每 N 帧才进行一次模型推理，中间帧复用上一帧检测结果。
+    /// 1 = 每帧推理（最实时）；大于 1 降频省算力，但手移动时中间帧坐标冻结。
+    /// </summary>
+    public int InferenceInterval { get; set; } = 1;
+
+    /// <summary>
+    /// 平滑窗口大小（稳定帧数 / 去抖）：新检出的手需连续出现至少 N 帧才输出，
+    /// 抑制手部突然出现/消失导致的闪烁。1 = 无去抖（立即输出）。
+    /// </summary>
+    public int SmoothWindowSize { get; set; } = 1;
+
+    /// <summary>
+    /// 指数平滑系数（当前帧权重）：SmoothValue = last*(1-Alpha) + current*Alpha。
+    /// 值越大越跟手（当前帧权重大），值越小越平滑（历史帧权重高）。来自配置 SmoothAlpha。
+    /// </summary>
+    public float SmoothAlpha { get; set; } = 0.7f;
+
+    /// <summary>
+    /// 骨架置信度阈值（输出门槛）：平均关键点置信度低于此值的整只手不输出/不绘制骨架。
+    /// 与 ConfidenceThreshold（检测接受门槛）相互独立，二者叠加生效。
+    /// </summary>
+    public float SkeletonConfidenceThreshold { get; set; } = 0.3f;
+
     /// <summary>
     /// 最大检测手数
     /// </summary>

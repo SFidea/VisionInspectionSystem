@@ -1442,7 +1442,11 @@ namespace VisionInspection.UI.Views
                         MinBoxAreaRatio = _detectionModeConfig.MinBoxAreaRatio,
                         RotationAugmentation = _detectionModeConfig.RotationAugmentation,
                         DetectLeftHand = _detectionModeConfig.DetectLeftHand,
-                        DetectRightHand = _detectionModeConfig.DetectRightHand
+                        DetectRightHand = _detectionModeConfig.DetectRightHand,
+                        InferenceInterval = _detectionModeConfig.InferenceInterval,
+                        SmoothWindowSize = _detectionModeConfig.SmoothWindowSize,
+                        SmoothAlpha = _detectionModeConfig.SmoothAlpha,
+                        SkeletonConfidenceThreshold = _detectionModeConfig.SkeletonConfidenceThreshold
                     });
                 }
             }

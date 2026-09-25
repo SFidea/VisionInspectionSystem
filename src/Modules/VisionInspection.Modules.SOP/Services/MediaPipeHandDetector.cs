@@ -27,13 +27,24 @@ public class MediaPipeHandDetector : IDisposable
     private const int PalmInputSize = 192;
     private const int LandmarkInputSize = 224;
 
-    // 平滑处理参数（EMA 权重，last 占 _smoothingFactor；0.6 在稳定与跟手之间取平衡，减少跨帧漂移）
-    private readonly float _smoothingFactor = 0.6f;
+    // 平滑处理参数：EMA 系数（当前帧权重）来自配置 SmoothAlpha，替换旧硬编码 0.6。
+    // 公式 SmoothValue = last*(1-Alpha) + current*Alpha；值越大越跟手。
 
-    // 多手时间平滑状态：按稳定 TrackId 维护最近帧手部姿态
+    // 多手时间平滑状态：按稳定 TrackId 维护最近帧手部姿态 + 出现计数（用于稳定去抖）
     private readonly object _trackLock = new();
-    private readonly Dictionary<int, HandPose> _trackedHands = new();
+    private readonly Dictionary<int, TrackedHandState> _trackedHands = new();
     private int _nextTrackId = 0;
+
+    // 时序平滑相关参数（来自配置 HandPoseEstimationConfig）
+    private readonly int _inferenceInterval;                 // 推理跳帧间隔（1=每帧）
+    private readonly int _smoothWindowSize;                  // 稳定输出所需连续出现帧数（去抖）
+    private readonly float _smoothAlpha;                     // EMA 当前帧权重
+    private readonly float _skeletonConfidenceThreshold;     // 骨架输出置信度门槛
+
+    // 跳帧复用缓存：最近一次有效平滑结果（每帧新建，调用方只读，安全复用）
+    private List<HandPose>? _lastSmoothed;
+    private int _frameCounter = 0;
+    private const int AbsentTimeoutFrames = 8;               // 手连续未出现多少帧后从跟踪表移除
 
     // 阈值与过滤参数（运行时从配置读取，支持界面调节并持久化）
     private readonly float _keypointConfidenceThreshold;  // 关键点平均置信度阈值
@@ -78,6 +89,10 @@ public class MediaPipeHandDetector : IDisposable
         _useGpu = config.UseGpu;
         _detectLeftHand = config.DetectLeftHand;
         _detectRightHand = config.DetectRightHand;
+        _inferenceInterval = config.InferenceInterval;
+        _smoothWindowSize = config.SmoothWindowSize;
+        _smoothAlpha = config.SmoothAlpha;
+        _skeletonConfidenceThreshold = config.SkeletonConfidenceThreshold;
     }
 
     /// <summary>
@@ -195,6 +210,15 @@ public class MediaPipeHandDetector : IDisposable
             return new List<HandPose>();
         }
 
+        // 推理跳帧：每隔 _inferenceInterval 帧才跑模型，中间帧复用上一帧平滑结果（降频省算力）。
+        // 首帧 _lastSmoothed 为空，强制跑推理；_inferenceInterval=1 时不跳帧。
+        _frameCounter++;
+        if (_inferenceInterval > 1 && _lastSmoothed != null && _frameCounter % _inferenceInterval != 0)
+        {
+            DebugLog($"跳帧复用上一帧（间隔={_inferenceInterval}，帧计数={_frameCounter}），返回 {_lastSmoothed.Count} 只手");
+            return new List<HandPose>(_lastSmoothed);
+        }
+
         // 在副本上做多遍抑制：palm 模型一遍通常只出 1 个框，
         // 故每遍检完一只手就把该区域涂黑，再跑一遍逼出第 2 只手（最多 _maxNumHands 遍）。
         var working = image.Copy();
@@ -284,13 +308,19 @@ public class MediaPipeHandDetector : IDisposable
             {
                 // 无检测，清空多手跟踪状态
                 lock (_trackLock) _trackedHands.Clear();
+                _lastSmoothed = new List<HandPose>();
                 return new List<HandPose>();
             }
 
-            // 应用多手时间平滑
+            // 应用多手时间平滑（EMA + 稳定去抖）
             var smoothedHands = ApplySmoothing(hands);
-            DebugLog($"DetectHands 结束，返回 {smoothedHands.Count} 只手");
-            return smoothedHands;
+
+            // 骨架置信度阈值过滤：平均关键点置信度低于门槛的整只手不输出（独立于检测接受门槛）
+            var filteredHands = smoothedHands.Where(h => h.Keypoints.Count > 0
+                && h.Keypoints.Average(k => k.Confidence) >= _skeletonConfidenceThreshold).ToList();
+            DebugLog($"DetectHands 结束，平滑后 {smoothedHands.Count} 只手 → 骨架阈值过滤后 {filteredHands.Count} 只手 (阈值={_skeletonConfidenceThreshold:F2})");
+            _lastSmoothed = filteredHands;
+            return filteredHands;
         }
         catch (Exception ex)
         {
@@ -306,12 +336,25 @@ public class MediaPipeHandDetector : IDisposable
     }
 
     /// <summary>
-    /// 应用多手时间平滑：按稳定 TrackId 维护最近一帧的手部姿态。
+    /// 跟踪表条目：最近平滑姿态 + 连续出现/缺席帧数（用于稳定去抖）
+    /// </summary>
+    private class TrackedHandState
+    {
+        public HandPose Pose { get; set; } = new();
+        public int AppearanceCount { get; set; } = 0;   // 连续出现帧数
+        public int AbsentFrames { get; set; } = 0;      // 连续缺席帧数
+    }
+
+    /// <summary>
+    /// 应用多手时间平滑：按稳定 TrackId 维护最近帧手部姿态。
     /// 用包围盒中心点 + 手型一致性做跨帧 ID 匹配，EMA 平滑关键点与包围盒，支持双手输出且跨帧 ID 稳定。
     ///
     /// 关键修复：采用 1:1 贪心匹配（一个 track 只能分配给一只当前手，反之亦然）。
     /// 旧实现里每只当前手各自找最近 track，没有互斥约束，两只真手可能同时匹配到同一个 track，
     /// 导致 EMA 把两只不同位置的手取平均 → 姿态"画到中间、不落在手上"。
+    ///
+    /// 稳定去抖：新检出的手需连续出现至少 _smoothWindowSize 帧才输出（SmoothWindowSize=1 时无去抖，
+    /// 立即输出），抑制手部突然出现/消失导致的闪烁；手短暂缺席时保留状态、递减计数，超时移除。
     /// </summary>
     private List<HandPose> ApplySmoothing(List<HandPose> currentHands)
     {
@@ -332,17 +375,17 @@ public class MediaPipeHandDetector : IDisposable
                 var curCenter = BoxCenter(cur.BoundingBox);
                 foreach (var kv in _trackedHands)
                 {
-                    var prevCenter = BoxCenter(kv.Value.BoundingBox);
+                    var prevCenter = BoxCenter(kv.Value.Pose.BoundingBox);
                     float dx = prevCenter.X - curCenter.X;
                     float dy = prevCenter.Y - curCenter.Y;
                     float d = MathF.Sqrt(dx * dx + dy * dy);
-                    float maxDist = Math.Max(cur.BoundingBox.Width, kv.Value.BoundingBox.Width) * 1.6f + 30f;
+                    float maxDist = Math.Max(cur.BoundingBox.Width, kv.Value.Pose.BoundingBox.Width) * 1.6f + 30f;
                     if (d >= maxDist) continue;
 
                     // 手型都已知且不一致 → 加巨大偏置，强制不配对（左/右手不会混淆）
                     float adj = d;
-                    if (cur.HandType != HandType.Unknown && kv.Value.HandType != HandType.Unknown
-                        && cur.HandType != kv.Value.HandType)
+                    if (cur.HandType != HandType.Unknown && kv.Value.Pose.HandType != HandType.Unknown
+                        && cur.HandType != kv.Value.Pose.HandType)
                         adj += 1e6f;
 
                     pairs.Add((ci, kv.Key, adj));
@@ -358,34 +401,51 @@ public class MediaPipeHandDetector : IDisposable
                 assignedTracks.Add(p.trackId);
                 assignedCur.Add(p.curIdx);
 
-                var prev = _trackedHands[p.trackId];
+                var prevState = _trackedHands[p.trackId];
                 var cur = currentHands[p.curIdx];
                 var smoothed = new HandPose
                 {
                     TrackId = p.trackId,
                     HandType = cur.HandType,
-                    BoundingBox = EmaRect(prev.BoundingBox, cur.BoundingBox),
-                    Keypoints = EmaKeypoints(prev.Keypoints, cur.Keypoints),
+                    BoundingBox = EmaRect(prevState.Pose.BoundingBox, cur.BoundingBox),
+                    Keypoints = EmaKeypoints(prevState.Pose.Keypoints, cur.Keypoints),
                     Timestamp = cur.Timestamp
                 };
-                _trackedHands[p.trackId] = smoothed;
-                result.Add(smoothed);
+                // 更新跟踪状态：连续出现 +1，缺席清零
+                prevState.Pose = smoothed;
+                prevState.AppearanceCount++;
+                prevState.AbsentFrames = 0;
+                // 稳定去抖：未连续出现足够帧数时暂不输出（避免闪烁/瞬现）
+                if (prevState.AppearanceCount >= _smoothWindowSize)
+                    result.Add(smoothed);
             }
 
-            // 未配对的当前手：新建独立 track（不做 EMA，直接落到真实检测位置，避免漂移）
+            // 未配对的当前手：新建独立 track（不立即输出，除非窗口<=1=无去抖）
             for (int ci = 0; ci < currentHands.Count; ci++)
             {
                 if (assignedCur.Contains(ci)) continue;
                 var cur = currentHands[ci];
                 int newId = _nextTrackId++;
                 cur.TrackId = newId;
-                _trackedHands[newId] = cur;
-                result.Add(cur);
+                _trackedHands[newId] = new TrackedHandState
+                {
+                    Pose = cur,
+                    AppearanceCount = 1,
+                    AbsentFrames = 0
+                };
+                if (_smoothWindowSize <= 1)
+                    result.Add(cur);
             }
 
-            // 清理本轮未匹配到的旧 track
+            // 清理本轮未匹配到的旧 track（缺席递增、出现递减，超时移除）
             foreach (var staleId in _trackedHands.Keys.Where(k => !assignedTracks.Contains(k)).ToList())
-                _trackedHands.Remove(staleId);
+            {
+                var st = _trackedHands[staleId];
+                st.AbsentFrames++;
+                st.AppearanceCount = Math.Max(0, st.AppearanceCount - 1);
+                if (st.AbsentFrames > AbsentTimeoutFrames)
+                    _trackedHands.Remove(staleId);
+            }
 
             return result;
         }
@@ -519,7 +579,7 @@ public class MediaPipeHandDetector : IDisposable
     /// </summary>
     private float SmoothValue(float last, float current)
     {
-        return last * _smoothingFactor + current * (1 - _smoothingFactor);
+        return last * (1 - _smoothAlpha) + current * _smoothAlpha;
     }
 
     /// <summary>

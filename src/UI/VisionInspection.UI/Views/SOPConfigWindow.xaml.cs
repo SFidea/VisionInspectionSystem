@@ -1115,7 +1115,11 @@ namespace VisionInspection.UI.Views
                 HandBackend = GetSelectedTag(BackendComboBox) ?? "MediaPipe",
                 DetectLeftHand = DetectLeftHandCheckBox.IsChecked ?? true,
                 DetectRightHand = DetectRightHandCheckBox.IsChecked ?? true,
-                ConfidenceThreshold = HandConfidenceThreshold
+                ConfidenceThreshold = HandConfidenceThreshold,
+                InferenceInterval = HandInferenceInterval,
+                SmoothWindowSize = HandSmoothWindowSize,
+                SmoothAlpha = HandSmoothAlpha,
+                SkeletonConfidenceThreshold = HandSkeletonThreshold
             };
         }
 
@@ -1154,6 +1158,12 @@ namespace VisionInspection.UI.Views
             KeyConfSlider.Value = config.ConfidenceThreshold;
             KeyConfValue.Text = config.ConfidenceThreshold.ToString("F2");
             HandConfidenceThreshold = config.ConfidenceThreshold;
+
+            // 平滑类参数往返（来自「高级参数」窗口）
+            HandInferenceInterval = config.InferenceInterval;
+            HandSmoothWindowSize = config.SmoothWindowSize;
+            HandSmoothAlpha = config.SmoothAlpha;
+            HandSkeletonThreshold = config.SkeletonConfidenceThreshold;
         }
 
         private void AdvancedParamsButton_Click(object sender, RoutedEventArgs e)
@@ -1211,5 +1221,14 @@ namespace VisionInspection.UI.Views
         public bool DetectRightHand { get; set; } = true;
         /// <summary>关键点平均置信度阈值（ConfidenceThreshold，此前写死 0.5）</summary>
         public float ConfidenceThreshold { get; set; } = 0.5f;
+
+        /// <summary>推理跳帧间隔（每 N 帧推理一次，1=每帧，来自「高级参数」）</summary>
+        public int InferenceInterval { get; set; } = 1;
+        /// <summary>平滑窗口（稳定帧数/去抖），1=无去抖</summary>
+        public int SmoothWindowSize { get; set; } = 1;
+        /// <summary>EMA 平滑系数（当前帧权重）</summary>
+        public float SmoothAlpha { get; set; } = 0.7f;
+        /// <summary>骨架置信度输出门槛</summary>
+        public float SkeletonConfidenceThreshold { get; set; } = 0.3f;
     }
 }

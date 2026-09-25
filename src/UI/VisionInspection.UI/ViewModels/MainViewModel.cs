@@ -48,7 +48,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         bool EnableHandStructureCheck, float HandStructureWristTipRatio,
         float DetectionConfidenceThreshold, float MinBoxAreaRatio,
         bool RotationAugmentation, string HandBackend, bool DetectLeftHand, bool DetectRightHand,
-        float ConfidenceThreshold)? _savedSOPDetectionConfig;
+        float ConfidenceThreshold, int InferenceInterval, int SmoothWindowSize,
+        float SmoothAlpha, float SkeletonConfidenceThreshold)? _savedSOPDetectionConfig;
 
     private static readonly object _logLock = new();
     private const string _debugLogPath = "sop_frame_debug.log";
@@ -1522,14 +1523,16 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         bool enableHandStructureCheck = true, float handStructureWristTipRatio = 0.18f,
         float detectionConfidenceThreshold = 0.08f, float minBoxAreaRatio = 0.0005f,
         bool rotationAugmentation = true, string handBackend = "MediaPipe",
-        bool detectLeftHand = true, bool detectRightHand = true, float confidenceThreshold = 0.5f)
+        bool detectLeftHand = true, bool detectRightHand = true, float confidenceThreshold = 0.5f,
+        int inferenceInterval = 1, int smoothWindowSize = 1, float smoothAlpha = 0.7f,
+        float skeletonConfidenceThreshold = 0.3f)
     {
         _savedSOPDetectionConfig = (detectionMode, enableHandPose, maxNumHands,
             enableFaceFilter, faceFilterUpperRatio,
             enableHandStructureCheck, handStructureWristTipRatio,
             detectionConfidenceThreshold, minBoxAreaRatio,
             rotationAugmentation, handBackend, detectLeftHand, detectRightHand,
-            confidenceThreshold);
+            confidenceThreshold, inferenceInterval, smoothWindowSize, smoothAlpha, skeletonConfidenceThreshold);
         Console.WriteLine($"[MainViewModel] SOP检测配置已保存: 模式={detectionMode}, 手部检测={enableHandPose}, 后端={handBackend}");
     }
 
