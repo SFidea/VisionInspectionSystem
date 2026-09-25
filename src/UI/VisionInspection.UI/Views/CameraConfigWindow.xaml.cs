@@ -584,6 +584,8 @@ namespace VisionInspection.UI.Views
 
                 var ext = (_selectedCamera?.ExtInfo as OnvifCameraExt) ?? new OnvifCameraExt();
                 ext.RtspUrl = rtsp;
+                ext.UserName = OnvifUserTextBox?.Text.Trim() ?? "";
+                ext.Password = OnvifPassBox?.Password ?? "";
                 var manualCam = new CameraInfo
                 {
                     Id = $"onvif_manual",
@@ -626,6 +628,13 @@ namespace VisionInspection.UI.Views
                         2 => new OnvifCameraService(),
                         _ => new HikvisionCameraService()
                     };
+
+                    // 网络相机：把界面上填的账号密码同步到扩展信息（ONVIF SOAP 鉴权 + RTSP 取流都要用）
+                    if (camera.ExtInfo is OnvifCameraExt onvifExt)
+                    {
+                        onvifExt.UserName = OnvifUserTextBox?.Text.Trim() ?? "";
+                        onvifExt.Password = OnvifPassBox?.Password ?? "";
+                    }
 
                     _cameraManager.RegisterSlot(slotId, camera.DisplayName, isPrimary: i == 0);
                     bool ok = await _cameraManager.ConnectSlotAsync(slotId, service, camera);

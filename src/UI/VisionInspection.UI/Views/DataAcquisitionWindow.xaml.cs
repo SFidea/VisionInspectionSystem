@@ -28,6 +28,9 @@ public partial class DataAcquisitionWindow : Window
     private string _lastVideoPath = "";
     private string _lastSessionDir = "";
 
+    /// <summary>无帧看门狗是否已触发（每次开始录制前重置）</summary>
+    private bool _noFrameWatchdogFired;
+
     private DataAcquisitionConfig Config => DataAcquisitionConfigManager.Instance.Config;
 
     public DataAcquisitionWindow()
@@ -379,11 +382,40 @@ public partial class DataAcquisitionWindow : Window
 
     // ==================== 录像 ====================
 
-    private void BtnRecordStart_Click(object sender, RoutedEventArgs e)
+    private async void BtnRecordStart_Click(object sender, RoutedEventArgs e)
     {
         ReadUiToConfig();
 
         if (_recorder.IsRecording) return;
+
+        // ---------- 前置检查：相机必须已连接且正在出图 ----------
+        var mgr = CameraManager.Instance;
+
+        if (!mgr.IsConnected)
+        {
+            MessageBox.Show(this,
+                "未检测到已连接的相机。\n\n请先在「相机配置」里连接相机（工业相机 / 网络 ONVIF 相机 / 本地摄像头），再开始录制。",
+                "无法开始录制", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (!mgr.IsGrabbing)
+        {
+            var ask = MessageBox.Show(this,
+                "相机已连接，但尚未开始采集（当前没有图像流）。\n\n是否立即开始采集并录制？",
+                "相机未在采集", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (ask != MessageBoxResult.Yes) return;
+
+            SetStatus("正在启动相机采集...");
+            await mgr.StartAllGrabbingAsync();
+            if (!mgr.IsGrabbing)
+            {
+                MessageBox.Show(this, "相机采集启动失败，请检查相机状态后重试。",
+                    "无法开始录制", MessageBoxButton.OK, MessageBoxImage.Error);
+                SetStatus("相机采集启动失败");
+                return;
+            }
+        }
 
         var session = string.IsNullOrWhiteSpace(txtSessionName.Text) ? NewSessionName() : txtSessionName.Text.Trim();
         var root = ResolveRoot(txtOutputRoot.Text);
@@ -403,6 +435,7 @@ public partial class DataAcquisitionWindow : Window
 
         try
         {
+            _noFrameWatchdogFired = false;
             _recorder.Start(videoFile, Config.Record);
         }
         catch (Exception ex)
@@ -419,6 +452,7 @@ public partial class DataAcquisitionWindow : Window
 
         btnRecordStart.IsEnabled = false;
         btnRecordStop.IsEnabled = true;
+        txtRecordStatus.Foreground = System.Windows.Media.Brushes.Black;
         txtRecordStatus.Text = "录制中...（等待相机帧）";
         SetStatus("录制中：" + videoFile);
         _recordTimer.Start();
@@ -443,6 +477,28 @@ public partial class DataAcquisitionWindow : Window
         var mb = _recorder.FileBytes / 1024.0 / 1024.0;
         txtRecordStatus.Text =
             $"录制中：{_recorder.Elapsed.TotalSeconds:F1}s | 写入 {_recorder.FramesWritten} 帧 | 丢帧 {_recorder.FramesDropped} | {mb:F1} MB";
+
+        // 看门狗：录制已开始却迟迟收不到相机帧 → 先警告，再自动停止，避免录出空文件
+        if (_recorder.FramesWritten > 0)
+        {
+            txtRecordStatus.Foreground = System.Windows.Media.Brushes.Black;
+            return;
+        }
+
+        var waited = _recorder.Elapsed.TotalSeconds;
+        if (waited > 10)
+        {
+            if (_noFrameWatchdogFired) return;
+            _noFrameWatchdogFired = true;
+            txtRecordStatus.Foreground = System.Windows.Media.Brushes.IndianRed;
+            txtRecordStatus.Text = "超过 10 秒未收到相机帧，正在停止...";
+            _ = _recorder.StopAsync("未收到相机帧（相机可能已断开或未开始采集）");
+        }
+        else if (waited > 4)
+        {
+            txtRecordStatus.Foreground = System.Windows.Media.Brushes.IndianRed;
+            txtRecordStatus.Text = $"已等待 {waited:F0}s 仍未收到相机帧——请确认相机正在出图（否则 10s 后自动停止）";
+        }
     }
 
     private void OnRecordingStopped(string reason)
@@ -455,8 +511,15 @@ public partial class DataAcquisitionWindow : Window
             try { CameraManager.Instance.FrameGrabbed -= OnFrameGrabbed; } catch { }
 
             var mb = _recorder.FileBytes / 1024.0 / 1024.0;
+            txtRecordStatus.Foreground = System.Windows.Media.Brushes.Black;
             txtRecordStatus.Text = $"已停止（{reason}）：{_recorder.FramesWritten} 帧, {mb:F1} MB";
             SetStatus("录制结束：" + _lastVideoPath);
+
+            if (_recorder.FramesWritten == 0)
+                MessageBox.Show(this,
+                    "本次录制没有收到任何相机帧，未生成有效视频。\n\n" +
+                    "常见原因：相机未开始采集、相机已断开、或取像被其它窗口占用。",
+                    "录制为空", MessageBoxButton.OK, MessageBoxImage.Warning);
 
             if (!string.IsNullOrEmpty(_lastVideoPath) && File.Exists(_lastVideoPath))
                 txtSourceVideo.Text = _lastVideoPath;

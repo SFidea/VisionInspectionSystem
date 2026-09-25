@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
+using System.Security;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -30,6 +33,11 @@ namespace VisionInspection.UI.Services
         private bool _isGrabbing;
         private CancellationTokenSource? _cts;
         private Task? _grabTask;
+
+        private readonly object _captureLock = new();
+        private int _readFailCount;
+        private int _reconnectAttempts;
+        private string _lastRtspUrl = "";
 
         #endregion
 
@@ -116,7 +124,9 @@ namespace VisionInspection.UI.Services
                     }
                     catch (SocketException)
                     {
-                        break; // 超时 / 无更多响应
+                        // 单次接收超时（ReceiveTimeout=1s）：不能 break，否则响应稍慢的相机会被整轮漏掉。
+                        // 继续等，直到整个探测窗口（timeout）耗尽。
+                        continue;
                     }
                 }
             }
@@ -191,7 +201,8 @@ namespace VisionInspection.UI.Services
 
         #region RTSP 地址解析（匿名 GetCapabilities → GetProfiles → GetStreamUri）
 
-        private static async Task<string?> TryGetRtspUrlAsync(string deviceServiceUrl, int timeoutMs = 2500)
+        private static async Task<string?> TryGetRtspUrlAsync(string deviceServiceUrl, int timeoutMs = 2500,
+            string? user = null, string? pass = null)
         {
             if (string.IsNullOrEmpty(deviceServiceUrl)) return null;
             try
@@ -199,21 +210,21 @@ namespace VisionInspection.UI.Services
                 using var client = new HttpClient { Timeout = TimeSpan.FromMilliseconds(timeoutMs) };
 
                 // 1. 设备服务 GetCapabilities → 媒体服务地址
-                string caps = await PostSoapAsync(client, deviceServiceUrl, BuildGetCapabilities());
+                string caps = await PostSoapAsync(client, deviceServiceUrl, BuildGetCapabilities(user, pass));
                 if (string.IsNullOrEmpty(caps)) return null;
-                string mediaUrl = Regex.Match(caps, @"<tt:MediaXAddr>([^<]*)</tt:MediaXAddr>").Groups[1].Value;
+                string mediaUrl = ExtractMediaXAddr(caps);
                 if (string.IsNullOrEmpty(mediaUrl)) return null;
 
                 // 2. 媒体服务 GetProfiles → 首个 Profile token
-                string profiles = await PostSoapAsync(client, mediaUrl, BuildGetProfiles());
+                string profiles = await PostSoapAsync(client, mediaUrl, BuildGetProfiles(user, pass));
                 if (string.IsNullOrEmpty(profiles)) return null;
-                string token = Regex.Match(profiles, @"<trt:Profiles[^>]*token=""([^""]*)""").Groups[1].Value;
+                string token = Regex.Match(profiles, @"<[\w]+:Profiles[^>]*token=""([^""]*)""").Groups[1].Value;
                 if (string.IsNullOrEmpty(token)) return null;
 
                 // 3. GetStreamUri → RTSP 地址
-                string stream = await PostSoapAsync(client, mediaUrl, BuildGetStreamUri(token));
+                string stream = await PostSoapAsync(client, mediaUrl, BuildGetStreamUri(token, user, pass));
                 if (string.IsNullOrEmpty(stream)) return null;
-                string uri = Regex.Match(stream, @"<tt:Uri>([^<]*)</tt:Uri>").Groups[1].Value;
+                string uri = Regex.Match(stream, @"<[\w]+:Uri>([^<]*)</[\w]+:Uri>").Groups[1].Value;
                 return string.IsNullOrEmpty(uri) ? null : uri;
             }
             catch (Exception ex)
@@ -223,6 +234,27 @@ namespace VisionInspection.UI.Services
             }
         }
 
+        /// <summary>
+        /// 提取媒体服务地址（XAddr）。
+        /// ONVIF 标准返回 &lt;tt:Media&gt;&lt;tt:XAddr&gt;…&lt;/tt:XAddr&gt;&lt;/tt:Media&gt;；
+        /// 只有少数厂商固件直接给 &lt;tt:MediaXAddr&gt;…&lt;/tt:MediaXAddr&gt;。
+        /// 旧实现只认后者，导致标准设备一律解析失败、静默回退到硬编码 RTSP 路径
+        /// （表现为"能发现相机但连不上"）。这里两种都兼容，且命名空间前缀不写死。
+        /// </summary>
+        private static string ExtractMediaXAddr(string caps)
+        {
+            var m = Regex.Match(caps, @"<[\w]+:MediaXAddr>([^<]*)</[\w]+:MediaXAddr>");
+            if (m.Success) return m.Groups[1].Value.Trim();
+
+            m = Regex.Match(caps, @"<[\w]+:Media>(.*?)</[\w]+:Media>", RegexOptions.Singleline);
+            if (m.Success)
+            {
+                var inner = Regex.Match(m.Groups[1].Value, @"<[\w]+:XAddr>([^<]*)</[\w]+:XAddr>");
+                if (inner.Success) return inner.Groups[1].Value.Trim();
+            }
+            return "";
+        }
+
         private static async Task<string> PostSoapAsync(HttpClient client, string url, string envelope)
         {
             using var content = new StringContent(envelope, Encoding.UTF8, "application/soap+xml");
@@ -230,27 +262,85 @@ namespace VisionInspection.UI.Services
             return await resp.Content.ReadAsStringAsync();
         }
 
-        private static string BuildGetCapabilities() =>
+        private static string BuildGetCapabilities(string? user, string? pass) =>
             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\">" +
-            "<s:Header/>" +
+            BuildSecurityHeader(user, pass) +
             "<s:Body><GetCapabilities xmlns=\"http://www.onvif.org/ver10/device/wsdl\"><Category>All</Category></GetCapabilities></s:Body></s:Envelope>";
 
-        private static string BuildGetProfiles() =>
+        private static string BuildGetProfiles(string? user, string? pass) =>
             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\">" +
-            "<s:Header/>" +
+            BuildSecurityHeader(user, pass) +
             "<s:Body><GetProfiles xmlns=\"http://www.onvif.org/ver10/media/wsdl\"/></s:Body></s:Envelope>";
 
-        private static string BuildGetStreamUri(string token) =>
+        private static string BuildGetStreamUri(string token, string? user, string? pass) =>
             "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\">" +
-            "<s:Header/>" +
+            BuildSecurityHeader(user, pass) +
             "<s:Body><GetStreamUri xmlns=\"http://www.onvif.org/ver10/media/wsdl\">" +
             "<StreamSetup><Stream>RTP-Unicast</Stream><Transport><Protocol>RTSP</Protocol></Transport></StreamSetup>" +
             $"<ProfileToken>{token}</ProfileToken></GetStreamUri></s:Body></s:Envelope>";
 
         /// <summary>
+        /// WS-Security UsernameToken（PasswordDigest）。
+        /// 绝大多数 IP 相机的 GetCapabilities/GetProfiles 都要求鉴权，
+        /// 不带上这段会直接返回 401，导致 RTSP 地址解析失败、静默回退到硬编码路径。
+        /// 未配置用户名时返回空头（匿名访问）。
+        /// </summary>
+        private static string BuildSecurityHeader(string? user, string? pass)
+        {
+            if (string.IsNullOrWhiteSpace(user)) return "<s:Header/>";
+
+            var nonceBytes = new byte[16];
+            RandomNumberGenerator.Fill(nonceBytes);
+            string nonceB64 = Convert.ToBase64String(nonceBytes);
+            string created = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+
+            // Digest = Base64( SHA1( nonceBytes + createdUTF8 + passwordUTF8 ) )
+            var buf = new List<byte>();
+            buf.AddRange(nonceBytes);
+            buf.AddRange(Encoding.UTF8.GetBytes(created));
+            buf.AddRange(Encoding.UTF8.GetBytes(pass ?? ""));
+            string digestB64 = Convert.ToBase64String(SHA1.HashData(buf.ToArray()));
+
+            return "<s:Header>" +
+                   "<Security s:mustUnderstand=\"1\" xmlns=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd\">" +
+                   "<UsernameToken>" +
+                   $"<Username>{SecurityElement.Escape(user)}</Username>" +
+                   "<Password Type=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest\">" +
+                   $"{digestB64}</Password>" +
+                   $"<Nonce EncodingType=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary\">{nonceB64}</Nonce>" +
+                   "<Created xmlns=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd\">" +
+                   $"{created}</Created>" +
+                   "</UsernameToken></Security></s:Header>";
+        }
+
+        /// <summary>
         /// 常见默认 RTSP 路径（海康/大华 IP 相机主码流）；失败时作为兜底，可在界面手动修改
         /// </summary>
         private static string BuildDefaultRtsp(string ip) => $"rtsp://{ip}:554/Streaming/Channels/101";
+
+        /// <summary>
+        /// 把用户名/密码注入 RTSP 地址：rtsp://user:pass@host:port/path。
+        /// 已自带凭据（UserInfo 非空）或未提供用户名时原样返回，避免重复注入。
+        /// </summary>
+        private static string InjectRtspCredentials(string rtsp, string? user, string? pass)
+        {
+            if (string.IsNullOrWhiteSpace(user)) return rtsp;
+            if (!Uri.TryCreate(rtsp, UriKind.Absolute, out var u)) return rtsp;
+            if (!string.IsNullOrEmpty(u.UserInfo)) return rtsp; // 用户已手写 user:pass@
+
+            var creds = Uri.EscapeDataString(user) + ":" + Uri.EscapeDataString(pass ?? "");
+            var port = u.IsDefaultPort ? "" : ":" + u.Port;
+            return $"{u.Scheme}://{creds}@{u.Host}{port}{u.PathAndQuery}";
+        }
+
+        /// <summary>隐藏 URL 中的账号密码，避免把凭据打到日志/界面上</summary>
+        private static string MaskCredentials(string url)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var u) || string.IsNullOrEmpty(u.UserInfo))
+                return url;
+            var port = u.IsDefaultPort ? "" : ":" + u.Port;
+            return $"{u.Scheme}://***:***@{u.Host}{port}{u.PathAndQuery}";
+        }
 
         #endregion
 
@@ -270,15 +360,31 @@ namespace VisionInspection.UI.Services
                         return false;
                     }
 
-                    _capture = new VideoCapture(ext.RtspUrl);
+                    // 配置了账号密码时：先用鉴权重新向 ONVIF 取一次真实 RTSP 地址
+                    //（发现阶段是匿名的，鉴权相机会 401 而回退到硬编码路径）
+                    var rtsp = ext.RtspUrl;
+                    if (!string.IsNullOrWhiteSpace(ext.UserName) && !string.IsNullOrEmpty(ext.DeviceServiceUrl))
+                    {
+                        var authed = TryGetRtspUrlAsync(ext.DeviceServiceUrl, 3000, ext.UserName, ext.Password).Result;
+                        if (!string.IsNullOrEmpty(authed)) rtsp = authed!;
+                    }
+
+                    // 把凭据注入 RTSP URL：rtsp://user:pass@host:port/path
+                    rtsp = InjectRtspCredentials(rtsp, ext.UserName, ext.Password);
+
+                    _capture = new VideoCapture(rtsp);
                     if (!_capture.IsOpened())
                     {
-                        ErrorOccurred?.Invoke(this, $"无法打开网络相机: {ext.RtspUrl}");
+                        ErrorOccurred?.Invoke(this, $"无法打开网络相机: {MaskCredentials(rtsp)}");
                         return false;
                     }
 
                     // 降低解码缓冲，减少延迟
                     _capture.Set(VideoCaptureProperties.BufferSize, 1);
+
+                    lock (_captureLock) { _lastRtspUrl = rtsp; }
+                    _readFailCount = 0;
+                    _reconnectAttempts = 0;
 
                     _isConnected = true;
                     CurrentCamera = camera;
@@ -299,13 +405,17 @@ namespace VisionInspection.UI.Services
             {
                 StopGrabbing();
 
-                if (_isConnected && _capture != null)
+                lock (_captureLock)
                 {
-                    _capture.Release();
-                    _capture.Dispose();
-                    _capture = null;
-                    _isConnected = false;
-                    Debug.WriteLine("网络相机已断开");
+                    if (_isConnected && _capture != null)
+                    {
+                        _capture.Release();
+                        _capture.Dispose();
+                        _capture = null;
+                        _isConnected = false;
+                        _lastRtspUrl = "";
+                        Debug.WriteLine("网络相机已断开");
+                    }
                 }
 
                 CurrentCamera = new CameraInfo();
@@ -353,32 +463,76 @@ namespace VisionInspection.UI.Services
             {
                 try
                 {
-                    if (_capture != null)
+                    Mat? frame = null;
+                    bool ok = false;
+                    lock (_captureLock)
                     {
-                        using var frame = new Mat();
-                        if (_capture.Read(frame) && !frame.Empty())
+                        if (_capture != null)
                         {
-                            using var rgbFrame = new Mat();
-                            Cv2.CvtColor(frame, rgbFrame, ColorConversionCodes.BGR2RGB);
-
-                            int width = rgbFrame.Width;
-                            int height = rgbFrame.Height;
-                            int channels = rgbFrame.Channels();
-                            int totalBytes = width * height * channels;
-
-                            byte[] data = new byte[totalBytes];
-                            System.Runtime.InteropServices.Marshal.Copy(rgbFrame.Data, data, 0, totalBytes);
-
-                            ImageGrabbed?.Invoke(this, data);
-                            ImageDataGrabbed?.Invoke(this, new CameraImageData
-                            {
-                                Data = data,
-                                Width = width,
-                                Height = height,
-                                IsColor = true,
-                                Channels = channels
-                            });
+                            frame = new Mat();
+                            ok = _capture.Read(frame) && !frame.Empty();
                         }
+                    }
+
+                    if (!ok)
+                    {
+                        frame?.Dispose();
+                        frame = null;
+                        _readFailCount++;
+
+                        // 连续约 1 秒取不到帧 → 判定掉线，尝试重连
+                        if (_readFailCount >= 30)
+                        {
+                            if (_readFailCount == 30)
+                                ErrorOccurred?.Invoke(this, "网络相机取帧中断，正在尝试重连...");
+
+                            if (_readFailCount % 30 == 0)
+                            {
+                                _reconnectAttempts++;
+                                if (TryReconnect())
+                                {
+                                    _readFailCount = 0;
+                                    _reconnectAttempts = 0;
+                                    ConnectionStatusChanged?.Invoke(this, true);
+                                }
+                                else if (_reconnectAttempts >= 5)
+                                {
+                                    ErrorOccurred?.Invoke(this, $"网络相机重连失败 {_reconnectAttempts} 次，已停止采集");
+                                    _isGrabbing = false;
+                                    ConnectionStatusChanged?.Invoke(this, false);
+                                }
+                            }
+                        }
+
+                        Thread.Sleep(100);
+                        continue;
+                    }
+
+                    _readFailCount = 0;
+                    _reconnectAttempts = 0;
+
+                    using (frame)
+                    {
+                        using var rgbFrame = new Mat();
+                        Cv2.CvtColor(frame, rgbFrame, ColorConversionCodes.BGR2RGB);
+
+                        int width = rgbFrame.Width;
+                        int height = rgbFrame.Height;
+                        int channels = rgbFrame.Channels();
+                        int totalBytes = width * height * channels;
+
+                        byte[] data = new byte[totalBytes];
+                        System.Runtime.InteropServices.Marshal.Copy(rgbFrame.Data, data, 0, totalBytes);
+
+                        ImageGrabbed?.Invoke(this, data);
+                        ImageDataGrabbed?.Invoke(this, new CameraImageData
+                        {
+                            Data = data,
+                            Width = width,
+                            Height = height,
+                            IsColor = true,
+                            Channels = channels
+                        });
                     }
 
                     Thread.Sleep(33);
@@ -388,6 +542,48 @@ namespace VisionInspection.UI.Services
                     Debug.WriteLine($"采集异常：{ex.Message}");
                 }
             }
+        }
+
+        /// <summary>
+        /// 网络相机断流重连：释放旧 VideoCapture 并按原 RTSP 地址重新打开。
+        /// RTSP 是长连接，网络抖动 / 相机重启都会导致 Read 一直失败，
+        /// 不重连的话程序会静默无帧（界面停在最后一帧，看不出已掉线）。
+        /// </summary>
+        private bool TryReconnect()
+        {
+            string url;
+            lock (_captureLock) { url = _lastRtspUrl; }
+            if (string.IsNullOrEmpty(url)) return false;
+
+            lock (_captureLock)
+            {
+                try
+                {
+                    _capture?.Release();
+                    _capture?.Dispose();
+                }
+                catch { }
+                _capture = null;
+
+                try
+                {
+                    _capture = new VideoCapture(url);
+                    if (_capture.IsOpened())
+                    {
+                        _capture.Set(VideoCaptureProperties.BufferSize, 1);
+                        Debug.WriteLine("网络相机已重连");
+                        return true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"重连异常：{ex.Message}");
+                }
+
+                try { _capture?.Dispose(); } catch { }
+                _capture = null;
+            }
+            return false;
         }
 
         public void StopGrabbing()
@@ -446,5 +642,11 @@ namespace VisionInspection.UI.Services
         public string Model { get; set; } = "";
         public string DeviceServiceUrl { get; set; } = "";
         public string RtspUrl { get; set; } = "";
+
+        /// <summary>ONVIF / RTSP 用户名。绝大多数 IP 相机默认要求鉴权，留空则按匿名访问。</summary>
+        public string UserName { get; set; } = "";
+
+        /// <summary>ONVIF / RTSP 密码。</summary>
+        public string Password { get; set; } = "";
     }
 }

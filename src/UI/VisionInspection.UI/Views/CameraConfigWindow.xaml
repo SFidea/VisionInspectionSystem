@@ -77,6 +77,14 @@
                                 <TextBox x:Name="RtspUrlTextBox" Padding="4,3" BorderBrush="#B0BEC5" BorderThickness="1"
                                          TextChanged="RtspUrlTextBox_TextChanged"
                                          ToolTip="支持 rtsp://user:pass@ip:554/... 格式；发现相机后自动填充，也可手动输入"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                    <TextBlock Text="账号" FontSize="12" Foreground="#666" VerticalAlignment="Center" Width="34"/>
+                                    <TextBox x:Name="OnvifUserTextBox" Width="110" Padding="4,3" BorderBrush="#B0BEC5" BorderThickness="1"
+                                             ToolTip="ONVIF / RTSP 用户名。大多数 IP 相机默认要求鉴权，不填则按匿名访问（很可能连不上）"/>
+                                    <TextBlock Text="密码" FontSize="12" Foreground="#666" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                    <PasswordBox x:Name="OnvifPassBox" Width="110" Padding="4,3" BorderBrush="#B0BEC5" BorderThickness="1" Margin="6,0,0,0"
+                                                 ToolTip="ONVIF / RTSP 密码"/>
+                                </StackPanel>
                             </StackPanel>
                             <Button x:Name="EnumInterfaceButton" Content="🔍 搜索相机" Padding="15,2" Margin="0,0,0,10"
                                     Click="EnumInterfaceButton_Click"/>
