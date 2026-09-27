@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
@@ -25,6 +26,11 @@ namespace VisionInspection.UI.Views
     {
         private List<SOPStepItem> _steps = new();
         private int _currentStepIndex = -1;
+
+        // 生产统计（面板级，程序重启归零；完整历史以 sop_records/*.jsonl 为准）
+        private int _cycleCount;        // 已完成的完整 SOP 周期数（PASS + NG）
+        private int _ngCycleCount;      // 其中 NG（含违规）的周期数
+        private int _violationCount;    // 累计违规事件次数（一个周期可能多次违规）
 
         // 计时器相关
         private DispatcherTimer? _timer;
@@ -468,6 +474,9 @@ namespace VisionInspection.UI.Views
                 // 同步给 MainViewModel，运行时将使用新配方
                 var vm = GetMainViewModel();
                 if (vm != null) vm.SopWorkflowPath = _currentYamlPath;
+
+                // 换产品配方 → 统计归零（不同产品的产量/不良不应混算）
+                ResetCycleStats(silent: true);
 
                 AddLog($"已切换产品配方: {item.DisplayName}");
             }
@@ -1675,6 +1684,12 @@ namespace VisionInspection.UI.Views
                 // 将步骤时间轴的耗时统计合并到上方流程卡片
                 SyncStepDurationsFromStateMachine();
                 var isPass = !e.HasViolations;
+
+                // ⭐ 统计：一个完整周期结束（PASS / NG 都计入循环次数）
+                _cycleCount++;
+                if (!isPass) _ngCycleCount++;
+                UpdateCycleStats();
+
                 if (isPass)
                 {
                     SetResult("PASS", new SolidColorBrush(Color.FromRgb(82, 196, 26)));
@@ -1710,8 +1725,52 @@ namespace VisionInspection.UI.Views
             Dispatcher.Invoke(() =>
             {
                 SetResult("NG", new SolidColorBrush(Colors.Red));
+
+                // ⭐ 统计：违规事件累计（同一周期可能触发多次）
+                _violationCount++;
+                UpdateCycleStats();
+
                 AddLog($"⚠ 违规: [{e.Violation.Type}] {e.Violation.Description}");
             });
+        }
+
+        /// <summary>
+        /// 刷新「循环次数 / 违规次数」显示，并在 ToolTip 里给出 OK/NG 细分。
+        /// </summary>
+        private void UpdateCycleStats()
+        {
+            CycleCountTextBlock.Text = _cycleCount.ToString();
+            ViolationCountTextBlock.Text = _violationCount.ToString();
+
+            int okCycles = _cycleCount - _ngCycleCount;
+            double yield = _cycleCount > 0 ? okCycles * 100.0 / _cycleCount : 0;
+            string tip = $"完成周期 {_cycleCount} 次（OK {okCycles} / NG {_ngCycleCount}，良率 {yield:F1}%）\n" +
+                         $"违规事件 {_violationCount} 次\n双击可清零统计（复位不清零，换配方自动清零）";
+            CycleCountTextBlock.ToolTip = tip;
+            ViolationCountTextBlock.ToolTip = tip;
+        }
+
+        /// <summary>
+        /// 清零循环/违规统计。换配方或用户双击数字时调用。
+        /// 注意：复位（🔄）刻意不清零——复位只是重开一个周期，产量/不良应跨周期累计。
+        /// </summary>
+        private void ResetCycleStats(bool silent = false)
+        {
+            _cycleCount = 0;
+            _ngCycleCount = 0;
+            _violationCount = 0;
+            UpdateCycleStats();
+            if (!silent) AddLog("🧮 循环/违规统计已清零");
+        }
+
+        private void CycleCountTextBlock_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ClickCount == 2) ResetCycleStats();
+        }
+
+        private void ViolationCountTextBlock_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ClickCount == 2) ResetCycleStats();
         }
 
         /// <summary>

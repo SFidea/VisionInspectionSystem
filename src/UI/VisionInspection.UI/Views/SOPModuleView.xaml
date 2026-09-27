@@ -89,38 +89,59 @@
             </Grid>
         </Border>
 
-        <!-- 状态概览 -->
+        <!-- 状态概览（2 行 × 3 列：状态/步骤/耗时 + 结果/循环次数/违规次数） -->
         <Border Grid.Row="2" BorderBrush="#E8E8E8" BorderThickness="0,0,0,1" Padding="15,10">
             <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                
-                <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+
+                <StackPanel Grid.Row="0" Grid.Column="0" HorizontalAlignment="Center">
                     <TextBlock Text="检测状态" FontSize="12" Foreground="#999" HorizontalAlignment="Center"/>
-                    <TextBlock x:Name="StatusTextBlock" Text="未初始化" FontSize="14" FontWeight="Bold" 
+                    <TextBlock x:Name="StatusTextBlock" Text="未初始化" FontSize="14" FontWeight="Bold"
                               Foreground="#999" HorizontalAlignment="Center" Margin="0,5,0,0"/>
                 </StackPanel>
-                
-                <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+
+                <StackPanel Grid.Row="0" Grid.Column="1" HorizontalAlignment="Center">
                     <TextBlock Text="当前步骤" FontSize="12" Foreground="#999" HorizontalAlignment="Center"/>
-                    <TextBlock x:Name="StepTextBlock" Text="0/0" FontSize="14" FontWeight="Bold" 
+                    <TextBlock x:Name="StepTextBlock" Text="0/0" FontSize="14" FontWeight="Bold"
                               Foreground="#1890FF" HorizontalAlignment="Center" Margin="0,5,0,0"/>
                 </StackPanel>
-                
-                <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+
+                <StackPanel Grid.Row="0" Grid.Column="2" HorizontalAlignment="Center">
                     <TextBlock Text="耗时" FontSize="12" Foreground="#999" HorizontalAlignment="Center"/>
-                    <TextBlock x:Name="TimerTextBlock" Text="00:00" FontSize="14" FontWeight="Bold" 
+                    <TextBlock x:Name="TimerTextBlock" Text="00:00" FontSize="14" FontWeight="Bold"
                               Foreground="#FA8C16" HorizontalAlignment="Center" Margin="0,5,0,0"/>
                 </StackPanel>
-                
-                <StackPanel Grid.Column="3" HorizontalAlignment="Center">
+
+                <StackPanel Grid.Row="1" Grid.Column="0" HorizontalAlignment="Center" Margin="0,8,0,0">
                     <TextBlock Text="检测结果" FontSize="12" Foreground="#999" HorizontalAlignment="Center"/>
-                    <TextBlock x:Name="ResultTextBlock" Text="--" FontSize="14" FontWeight="Bold" 
+                    <TextBlock x:Name="ResultTextBlock" Text="--" FontSize="14" FontWeight="Bold"
                               Foreground="#999" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                </StackPanel>
+
+                <!-- 循环次数：完成的完整周期数，双击数字可清零统计 -->
+                <StackPanel Grid.Row="1" Grid.Column="1" HorizontalAlignment="Center" Margin="0,8,0,0">
+                    <TextBlock Text="循环次数" FontSize="12" Foreground="#999" HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="CycleCountTextBlock" Text="0" FontSize="14" FontWeight="Bold"
+                              Foreground="#1890FF" HorizontalAlignment="Center" Margin="0,5,0,0"
+                              Cursor="Hand"
+                              MouseLeftButtonDown="CycleCountTextBlock_MouseLeftButtonDown"/>
+                </StackPanel>
+
+                <!-- 违规次数：累计违规事件数，双击数字可清零统计 -->
+                <StackPanel Grid.Row="1" Grid.Column="2" HorizontalAlignment="Center" Margin="0,8,0,0">
+                    <TextBlock Text="违规次数" FontSize="12" Foreground="#999" HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="ViolationCountTextBlock" Text="0" FontSize="14" FontWeight="Bold"
+                              Foreground="#F5222D" HorizontalAlignment="Center" Margin="0,5,0,0"
+                              Cursor="Hand"
+                              MouseLeftButtonDown="ViolationCountTextBlock_MouseLeftButtonDown"/>
                 </StackPanel>
             </Grid>
         </Border>

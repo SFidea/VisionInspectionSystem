@@ -421,7 +421,13 @@ public static class SOPYamlConverter
     {
         try
         {
+            // ⚠️ 必须 IgnoreUnmatchedProperties：
+            // 历史配方 YAML 里存在已被移除的死字段（model.type / model.classes /
+            // settings.detectionMode / settings.timeoutSeconds / visualization 等），
+            // YamlDotNet 默认遇到目标类型不存在的属性会抛 YamlException，导致整个配方加载失败。
+            // 与 LoadFullConfig / SaveRegions 两处保持一致，保证新旧配方都能加载。
             var deserializer = new DeserializerBuilder()
+                .IgnoreUnmatchedProperties()
                 .Build();
 
             var config = deserializer.Deserialize<SOPYamlConfig>(yaml);
