@@ -1,0 +1,162 @@
+<Window x:Class="VisionInspection.UI.Views.DeviceBenchmarkWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="设备性能测试"
+        Height="760" Width="1080"
+        MinHeight="600" MinWidth="900"
+        WindowStartupLocation="CenterOwner"
+        Background="#F5F7FA">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 环境信息 -->
+        <Border Grid.Row="0" Background="White" CornerRadius="8" Padding="14,12" Margin="0,0,0,12">
+            <StackPanel>
+                <TextBlock Text="🖥️ 运行环境" FontSize="14" FontWeight="Bold" Foreground="#374151" Margin="0,0,0,8"/>
+                <WrapPanel>
+                    <TextBlock Text="系统：" FontSize="12" Foreground="#6B7280"/>
+                    <TextBlock x:Name="EnvOsText" Text="检测中…" FontSize="12" Foreground="#111827" Margin="0,0,18,0"/>
+                    <TextBlock Text="CPU：" FontSize="12" Foreground="#6B7280"/>
+                    <TextBlock x:Name="EnvCpuText" Text="检测中…" FontSize="12" Foreground="#111827" Margin="0,0,18,0"/>
+                    <TextBlock Text="内存：" FontSize="12" Foreground="#6B7280"/>
+                    <TextBlock x:Name="EnvMemText" Text="-" FontSize="12" Foreground="#111827" Margin="0,0,18,0"/>
+                    <TextBlock Text="ONNX Runtime：" FontSize="12" Foreground="#6B7280"/>
+                    <TextBlock x:Name="EnvOrtText" Text="-" FontSize="12" Foreground="#111827" Margin="0,0,18,0"/>
+                    <TextBlock Text="CUDA：" FontSize="12" Foreground="#6B7280"/>
+                    <TextBlock x:Name="EnvCudaText" Text="检测中…" FontSize="12" FontWeight="Bold" Margin="0,0,18,0"/>
+                    <TextBlock Text="显卡：" FontSize="12" Foreground="#6B7280"/>
+                    <TextBlock x:Name="EnvGpuText" Text="-" FontSize="12" Foreground="#111827"/>
+                </WrapPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- 测试配置 -->
+        <Border Grid.Row="1" Background="White" CornerRadius="8" Padding="14,12" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="16"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- 左：被测项 -->
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="被测对象" FontSize="13" FontWeight="Bold" Foreground="#374151" Margin="0,0,0,6"/>
+                    <CheckBox x:Name="MediaPipeCheckBox" Content="MediaPipe 手部（palm 192 → landmark 224）"
+                              IsChecked="True" FontSize="13" Margin="0,0,0,6"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                        <TextBlock Text="YOLO 检测模型（可多选）" FontSize="12" Foreground="#6B7280" VerticalAlignment="Center"/>
+                        <Button x:Name="SelectAllButton" Content="全选" Width="52" Height="24" Margin="10,0,0,0"
+                                FontSize="11" Click="SelectAllButton_Click"/>
+                        <Button x:Name="ClearSelectionButton" Content="清空" Width="52" Height="24" Margin="6,0,0,0"
+                                FontSize="11" Click="ClearSelectionButton_Click"/>
+                    </StackPanel>
+                    <ListBox x:Name="YoloModelList" Height="132" SelectionMode="Extended"
+                             BorderBrush="#D1D5DB" FontSize="12"/>
+                </StackPanel>
+
+                <!-- 右：设备 / 场景 / 参数 -->
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="测试设备" FontSize="13" FontWeight="Bold" Foreground="#374151" Margin="0,0,0,6"/>
+                    <RadioButton x:Name="BothDeviceRadio" Content="CPU 与 GPU 都测（出对比，推荐）"
+                                 GroupName="Device" IsChecked="True" FontSize="12" Margin="0,0,0,3"/>
+                    <RadioButton x:Name="CpuOnlyRadio" Content="仅 CPU" GroupName="Device" FontSize="12" Margin="0,0,0,3"/>
+                    <RadioButton x:Name="GpuOnlyRadio" Content="仅 GPU (CUDA)" GroupName="Device" FontSize="12" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="验收场景档位" FontSize="13" FontWeight="Bold" Foreground="#374151" Margin="0,0,0,6"/>
+                    <ComboBox x:Name="ScenarioCombo" Width="260" HorizontalAlignment="Left" FontSize="12" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="输入源" FontSize="13" FontWeight="Bold" Foreground="#374151" Margin="0,0,0,6"/>
+                    <RadioButton x:Name="SyntheticRadio" Content="合成测试帧（结果可复现、跨设备可比）"
+                                 GroupName="Source" IsChecked="True" FontSize="12" Margin="0,0,0,3"/>
+                    <RadioButton x:Name="RealFrameRadio" Content="真实帧（相机实时 / 当前已加载图像）"
+                                 GroupName="Source" FontSize="12" Margin="0,0,0,8"/>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Text="分辨率" FontSize="12" Foreground="#6B7280" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="ResolutionCombo" Width="120" Margin="8,0,0,0" FontSize="12"/>
+                        <TextBlock Text="（合成帧生效）" FontSize="11" Foreground="#9CA3AF" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="预热帧" FontSize="12" Foreground="#6B7280" VerticalAlignment="Center"/>
+                        <TextBox x:Name="WarmupTextBox" Text="5" Width="52" Margin="6,0,0,0" FontSize="12" VerticalContentAlignment="Center"/>
+                        <TextBlock Text="测试帧" FontSize="12" Foreground="#6B7280" VerticalAlignment="Center" Margin="14,0,0,0"/>
+                        <TextBox x:Name="FramesTextBox" Text="50" Width="52" Margin="6,0,0,0" FontSize="12" VerticalContentAlignment="Center"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 操作与进度 -->
+        <Border Grid.Row="2" Background="White" CornerRadius="8" Padding="14,10" Margin="0,0,0,12">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <StackPanel Grid.Row="0" Orientation="Horizontal">
+                    <Button x:Name="StartButton" Content="🚀 开始测试" Width="120" Height="32" Click="StartButton_Click"
+                            Background="#2C8C8C" Foreground="White" BorderThickness="0" FontSize="13"/>
+                    <Button x:Name="CancelButton" Content="⏹ 取消" Width="86" Height="32" Margin="10,0,0,0"
+                            Click="CancelButton_Click" IsEnabled="False"
+                            Background="#E2E8F0" Foreground="#374151" BorderThickness="0" FontSize="13"/>
+                    <Button x:Name="ExportButton" Content="📤 导出 CSV" Width="100" Height="32" Margin="10,0,0,0"
+                            Click="ExportButton_Click" IsEnabled="False"
+                            Background="#E2E8F0" Foreground="#374151" BorderThickness="0" FontSize="13"/>
+                    <TextBlock x:Name="SummaryText" Text="" FontSize="12" Foreground="#6B7280"
+                               VerticalAlignment="Center" Margin="16,0,0,0"/>
+                </StackPanel>
+                <Grid Grid.Row="1" Margin="0,8,0,0">
+                    <ProgressBar x:Name="ProgressBar" Height="8" Minimum="0" Maximum="100" Value="0"
+                                 Background="#E5E7EB" Foreground="#2C8C8C" BorderThickness="0"/>
+                    <TextBlock x:Name="ProgressText" Text="就绪" FontSize="11" Foreground="#6B7280" Margin="0,12,0,0"/>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- 结果表 -->
+        <Border Grid.Row="3" Background="White" CornerRadius="8" Padding="8">
+            <DataGrid x:Name="ResultGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                      HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                      HorizontalGridLinesBrush="#EEF2F7" RowHeight="30" FontSize="12"
+                      CanUserAddRows="False" SelectionMode="Single">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="被测对象" Binding="{Binding Name}" Width="190"/>
+                    <DataGridTextColumn Header="类别" Binding="{Binding Category}" Width="100"/>
+                    <DataGridTextColumn Header="请求设备" Binding="{Binding RequestedDevice}" Width="72"/>
+                    <DataGridTextColumn Header="实际设备" Binding="{Binding ActualDevice}" Width="80"/>
+                    <DataGridTextColumn Header="平均 FPS" Binding="{Binding AvgFps, StringFormat={}{0:F1}}" Width="82"/>
+                    <DataGridTextColumn Header="平均延迟 ms" Binding="{Binding AvgMs, StringFormat={}{0:F2}}" Width="92"/>
+                    <DataGridTextColumn Header="P50 ms" Binding="{Binding P50Ms, StringFormat={}{0:F2}}" Width="70"/>
+                    <DataGridTextColumn Header="P95 ms" Binding="{Binding P95Ms, StringFormat={}{0:F2}}" Width="70"/>
+                    <DataGridTextColumn Header="最小 ms" Binding="{Binding MinMs, StringFormat={}{0:F2}}" Width="70"/>
+                    <DataGridTextColumn Header="最大 ms" Binding="{Binding MaxMs, StringFormat={}{0:F2}}" Width="70"/>
+                    <DataGridTextColumn Header="palm ms" Binding="{Binding PalmMs, StringFormat={}{0:F2}}" Width="68"/>
+                    <DataGridTextColumn Header="landmark ms" Binding="{Binding LandmarkMs, StringFormat={}{0:F2}}" Width="92"/>
+                    <DataGridTextColumn Header="目标 FPS" Binding="{Binding TargetFps}" Width="70"/>
+                    <DataGridTextColumn Header="判定" Binding="{Binding StatusText}" Width="80"/>
+                </DataGrid.Columns>
+                <DataGrid.RowStyle>
+                    <Style TargetType="DataGridRow">
+                        <Setter Property="Background" Value="White"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Error}" Value="{x:Null}">
+                                <Setter Property="Background" Value="White"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </DataGrid.RowStyle>
+            </DataGrid>
+        </Border>
+
+        <!-- 说明 -->
+        <TextBlock Grid.Row="4" Margin="0,10,0,0" FontSize="11" Foreground="#9CA3AF" TextWrapping="Wrap"
+                   Text="说明：预热帧不计入统计（首次 CUDA 初始化与内存分配耗时可达数百毫秒）；GPU 请求失败不会静默回退 CPU，会如实标注「实际设备」。测试期间请勿同时运行相机实时检测，否则会争抢算力导致结果偏低。"/>
+    </Grid>
+</Window>

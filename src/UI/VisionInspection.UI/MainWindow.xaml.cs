@@ -289,6 +289,17 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// 设备性能测试菜单点击：测试 MediaPipe 与 YOLO 模型在 CPU / GPU 上的推理帧率，
+    /// 验证部署机是否满足性能要求。
+    /// </summary>
+    private void DeviceBenchmarkMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var benchmarkWindow = new DeviceBenchmarkWindow();
+        benchmarkWindow.Owner = this;
+        benchmarkWindow.Show();
+    }
+
+    /// <summary>
     /// 打开 SOP 生成向导（傻瓜化生成 SOP 流程 YAML）
     /// </summary>
     private void SopWizardMenuItem_Click(object sender, RoutedEventArgs e)

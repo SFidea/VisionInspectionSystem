@@ -1250,6 +1250,44 @@ public class MediaPipeHandDetector : IDisposable
         return keypoints;
     }
 
+    /// <summary>
+    /// 基准测试专用：分别测量 palm（第一阶段）与 landmark（第二阶段）的推理耗时（毫秒）。
+    /// 与 DetectHands 不同——这里不做跳帧/平滑/多遍抑制，保证每次调用都真实跑满两阶段，
+    /// 否则合成测试帧检不出手掌时 landmark 根本不会执行，测出的 FPS 会虚高。
+    /// </summary>
+    public (double palmMs, double landmarkMs) MeasureStageLatency(SKBitmap image)
+    {
+        if (_palmSession == null || _landmarkSession == null)
+            return (0, 0);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var palms = DetectPalms(image);
+        sw.Stop();
+        double palmMs = sw.Elapsed.TotalMilliseconds;
+
+        sw.Restart();
+        if (palms.Count > 0)
+        {
+            DetectHandLandmarks(image, palms[0]);
+        }
+        else
+        {
+            // 未检出手掌时仍强制跑一次 landmark（用画面中心方形区域），
+            // 保证基准测试的两阶段耗时都被真实计入。
+            DetectHandLandmarks(image, new PalmDetection
+            {
+                X = 0.25f,
+                Y = 0.25f,
+                Width = 0.5f,
+                Height = 0.5f,
+                Confidence = 1f
+            });
+        }
+        sw.Stop();
+
+        return (palmMs, sw.Elapsed.TotalMilliseconds);
+    }
+
     public void Dispose()
     {
         _palmSession?.Dispose();

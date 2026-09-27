@@ -76,6 +76,8 @@
             <MenuItem Header="配置">
                 <MenuItem Header="模型管理" Click="ModelManagementMenuItem_Click"/>
                 <MenuItem Header="通信设置" Click="CommunicationConfigMenuItem_Click"/>
+                <Separator/>
+                <MenuItem Header="🚀 设备性能测试" Click="DeviceBenchmarkMenuItem_Click"/>
             </MenuItem>
             
             <MenuItem Header="帮助">
