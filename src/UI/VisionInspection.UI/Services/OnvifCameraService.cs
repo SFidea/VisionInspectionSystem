@@ -524,19 +524,21 @@ namespace VisionInspection.UI.Services
                         byte[] data = new byte[totalBytes];
                         System.Runtime.InteropServices.Marshal.Copy(rgbFrame.Data, data, 0, totalBytes);
 
-                        ImageGrabbed?.Invoke(this, data);
-                        ImageDataGrabbed?.Invoke(this, new CameraImageData
-                        {
-                            Data = data,
-                            Width = width,
-                            Height = height,
-                            IsColor = true,
-                            Channels = channels
-                        });
-                    }
-
-                    Thread.Sleep(33);
+                    ImageGrabbed?.Invoke(this, data);
+                    ImageDataGrabbed?.Invoke(this, new CameraImageData
+                    {
+                        Data = data,
+                        Width = width,
+                        Height = height,
+                        IsColor = true,
+                        Channels = channels
+                    });
                 }
+
+                // ⚠️ 成功取帧后不再强制 Sleep(33)：RTSP 的 Read 本身按流节拍阻塞，
+                // 额外睡眠会把 25/30fps 相机压到一半（同 WebCameraService 的帧率问题）。
+                // 读帧失败分支的 Thread.Sleep(100) 是重连退避，保留。
+            }
                 catch (Exception ex)
                 {
                     Debug.WriteLine($"采集异常：{ex.Message}");
