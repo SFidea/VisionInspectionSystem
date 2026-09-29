@@ -85,7 +85,7 @@
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="520"/>
+                <ColumnDefinition Width="720"/>
             </Grid.ColumnDefinitions>
 
             <!-- 周期明细（主展示区） -->
@@ -118,18 +118,18 @@
                             <ItemsControl x:Name="icViolations">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Grid Margin="0,4">
+                                        <Grid Margin="0,5">
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="120"/>
+                                                <ColumnDefinition Width="130"/>
                                                 <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="40"/>
+                                                <ColumnDefinition Width="44"/>
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{Binding Label}" VerticalAlignment="Center" FontSize="11" TextWrapping="Wrap"/>
+                                            <TextBlock Grid.Column="0" Text="{Binding Label}" VerticalAlignment="Center" FontSize="12" TextWrapping="Wrap"/>
                                             <Grid Grid.Column="1">
-                                                <Border Background="#E2E8F0" Height="16" CornerRadius="3"/>
-                                                <Border Background="#E05353" Width="{Binding BarWidthPx}" Height="16" CornerRadius="3" HorizontalAlignment="Left"/>
+                                                <Border Background="#E2E8F0" Height="18" CornerRadius="3"/>
+                                                <Border Background="#E05353" Width="{Binding BarWidthPx}" Height="18" CornerRadius="3" HorizontalAlignment="Left"/>
                                             </Grid>
-                                            <TextBlock Grid.Column="2" Text="{Binding Count}" VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="12" FontWeight="Bold" Foreground="#E05353"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding Count}" VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="13" FontWeight="Bold" Foreground="#E05353"/>
                                         </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
@@ -145,27 +145,27 @@
                             <ItemsControl x:Name="icStepCompare">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Grid Margin="0,6">
+                                        <Grid Margin="0,8">
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="120"/>
+                                                <ColumnDefinition Width="130"/>
                                                 <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{Binding StepName}" VerticalAlignment="Center" FontSize="11" TextWrapping="Wrap"/>
-                                            <StackPanel Grid.Column="1" Width="220" Margin="0,0,8,0">
-                                                <TextBlock Text="标准" FontSize="9" Foreground="#6B7280"/>
-                                                <Border Background="#E2E8F0" Height="10" CornerRadius="2">
-                                                    <Border Background="#9AA5B1" Height="10" Width="{Binding StdBarPx}" CornerRadius="2" HorizontalAlignment="Left"/>
+                                            <TextBlock Grid.Column="0" Text="{Binding StepName}" VerticalAlignment="Center" FontSize="13" TextWrapping="Wrap"/>
+                                            <StackPanel Grid.Column="1" Width="340" Margin="0,0,10,0">
+                                                <TextBlock Text="标准" FontSize="12" Foreground="#6B7280"/>
+                                                <Border Background="#E2E8F0" Height="18" CornerRadius="3">
+                                                    <Border Background="#9AA5B1" Height="18" Width="{Binding StdBarPx}" CornerRadius="3" HorizontalAlignment="Left"/>
                                                 </Border>
-                                                <TextBlock Text="实际" FontSize="9" Foreground="#6B7280" Margin="0,4,0,0"/>
-                                                <Border Background="#E2E8F0" Height="10" CornerRadius="2">
-                                                    <Border Background="#E8915B" Height="10" Width="{Binding ActualBarPx}" CornerRadius="2" HorizontalAlignment="Left"/>
+                                                <TextBlock Text="实际" FontSize="12" Foreground="#6B7280" Margin="0,5,0,0"/>
+                                                <Border Background="#E2E8F0" Height="18" CornerRadius="3">
+                                                    <Border Background="#E8915B" Height="18" Width="{Binding ActualBarPx}" CornerRadius="3" HorizontalAlignment="Left"/>
                                                 </Border>
                                             </StackPanel>
                                             <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding StandardText}" FontSize="10" Foreground="#6B7280"/>
-                                                <TextBlock Text="{Binding ActualText}" FontSize="10" Foreground="#374151" FontWeight="Bold"/>
-                                                <TextBlock Text="{Binding DeviationText}" FontSize="10" Foreground="{Binding DeviationColor}"/>
+                                                <TextBlock Text="{Binding StandardText}" FontSize="13" Foreground="#6B7280"/>
+                                                <TextBlock Text="{Binding ActualText}" FontSize="13" Foreground="#374151" FontWeight="Bold"/>
+                                                <TextBlock Text="{Binding DeviationText}" FontSize="13" Foreground="{Binding DeviationColor}"/>
                                             </StackPanel>
                                         </Grid>
                                     </DataTemplate>

@@ -123,7 +123,7 @@ public partial class SopDashboardWindow : Window
 
         int maxV = violationGroups.Count > 0 ? violationGroups.Max(x => x.Count) : 1;
         foreach (var v in violationGroups)
-            v.BarWidthPx = Math.Max(3, (int)(v.Count * 240.0 / maxV));
+            v.BarWidthPx = Math.Max(3, (int)(v.Count * 320.0 / maxV));  // 与 XAML 违规条区宽度匹配
         icViolations.ItemsSource = violationGroups;
         txtNoViolation.Visibility = violationGroups.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
@@ -145,8 +145,8 @@ public partial class SopDashboardWindow : Window
         if (globalMax <= 0) globalMax = 1;
         foreach (var s in stepGroups)
         {
-            s.StdBarPx = s.StandardSec > 0 ? Math.Max(2, (int)(s.StandardSec * 220 / globalMax)) : 0;
-            s.ActualBarPx = Math.Max(2, (int)(s.ActualSec * 220 / globalMax));
+            s.StdBarPx = s.StandardSec > 0 ? Math.Max(2, (int)(s.StandardSec * 340 / globalMax)) : 0;   // 与 XAML 条区宽度 340 匹配
+            s.ActualBarPx = Math.Max(2, (int)(s.ActualSec * 340 / globalMax));
             s.StandardText = s.StandardSec > 0 ? $"标准 {s.StandardSec:F1}s" : "标准 —";
             s.ActualText = $"实际 {s.ActualSec:F1}s";
             double dev = s.ActualSec - s.StandardSec;
