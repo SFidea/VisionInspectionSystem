@@ -126,8 +126,12 @@ namespace VisionInspection.UI.Services
             {
                 try
                 {
-                    // 断开已有连接（内部会先停止采集并等待采集线程完全退出）
-                    Disconnect();
+                    // 断开已有连接（仅确已连接时才走断开流程：
+                    // 首次连接跳过 StopGrabbing 等待与 500ms 销毁缓冲，且不会闪"相机已断开"状态）
+                    if (_isConnected)
+                    {
+                        Disconnect();
+                    }
 
                     if (camera?.ExtInfo == null)
                     {
@@ -225,6 +229,8 @@ namespace VisionInspection.UI.Services
         {
             try
             {
+                bool wasConnected = _isConnected;
+
                 // 先停止采集（确保采集线程完全退出后再释放 capture，避免原生访问冲突）
                 bool cleanStop = StopGrabbingCore();
 
@@ -266,7 +272,13 @@ namespace VisionInspection.UI.Services
                 }
 
                 CurrentCamera = new CameraInfo();
-                ConnectionStatusChanged?.Invoke(this, false);
+
+                // 仅真实发生过连接才广播"断开"事件：ConnectAsync 内部会先调本方法做清理，
+                // 若无条件广播，UI 会先闪一次"相机已断开"再变"已连接"（首连体验差）
+                if (wasConnected)
+                {
+                    ConnectionStatusChanged?.Invoke(this, false);
+                }
             }
             catch (Exception ex)
             {
