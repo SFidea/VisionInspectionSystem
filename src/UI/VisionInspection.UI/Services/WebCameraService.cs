@@ -129,9 +129,19 @@ namespace VisionInspection.UI.Services
                             return false;
                         }
 
+                        // 请求 MJPG 编码：UVC 相机在 USB2 带宽下 YUY2@720p 常被限制在 5~10fps，
+                        // MJPG 可达 30fps（其它软件帧率高通常就是用了 MJPG）。
+                        // 相机不支持时该设置会被忽略，不影响采集。
+                        _capture.Set(VideoCaptureProperties.FourCC, OpenCvSharp.FourCC.FromString("MJPG"));
+
                         // 请求 1280x720（DSHOW 下多数 UVC 相机可协商；失败则保持相机默认分辨率，不影响采集）
                         _capture.Set(VideoCaptureProperties.FrameWidth, 1280);
                         _capture.Set(VideoCaptureProperties.FrameHeight, 720);
+
+                        double negotiatedFps = _capture.Get(VideoCaptureProperties.Fps);
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[WebCamera] 摄像头 {cameraIndex} 协商结果: " +
+                            $"{_capture.Get(VideoCaptureProperties.FrameWidth):F0}x{_capture.Get(VideoCaptureProperties.FrameHeight):F0} @ {negotiatedFps:F1}fps");
                     }
 
                     _isConnected = true;
@@ -272,7 +282,9 @@ namespace VisionInspection.UI.Services
                     System.Diagnostics.Debug.WriteLine($"采集异常：{ex.Message}");
                 }
 
-                Thread.Sleep(33);
+                // ⚠️ 成功取帧后不再强制 Sleep(33)：DirectShow 的 Read 本身按相机帧节拍阻塞，
+                // 额外睡眠会把 30fps 相机压到 ~15fps（USB 相机帧率低的根因，2026-09-29 修复）。
+                // 帧间隔完全由相机与 Read 阻塞决定，循环只随帧率空转。
             }
         }
 

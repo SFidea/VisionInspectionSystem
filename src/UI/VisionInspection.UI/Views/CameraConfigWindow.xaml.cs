@@ -266,7 +266,7 @@ namespace VisionInspection.UI.Views
 
         // 用于限制预览更新频率
         private DateTime _lastPreviewUpdate = DateTime.MinValue;
-        private readonly TimeSpan _previewUpdateInterval = TimeSpan.FromMilliseconds(100); // 10fps，降低频率减少卡顿
+        private readonly TimeSpan _previewUpdateInterval = TimeSpan.FromMilliseconds(33); // 30fps（原 100ms/10fps 被误认为相机帧率低；转换已在后台线程，30fps 无压力）
 
         /// <summary>
         /// 相机图像采集事件 - 用于本地预览
