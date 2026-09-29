@@ -55,8 +55,13 @@ public class StepConditionEvaluator
         // 同步更新物体跨帧区域访问记录（用于放回等步骤的 from_region 约束）
         UpdateObjectRegions(detections);
 
-        // 步骤切换时清零稳定帧计数（按 StepId 区分，旧步骤的计数自然失效）
-        if (step.StepId != _lastEvaluatedStepId)
+        // 跳步检测（ViolationDetector.DetectSkipStep）会用同一实例评估"下一步"的意图，
+        // 这类对非当前步骤的评估：① 不参与稳定帧门控（跳步是单帧意图判定）；
+        // ② 不得清空/污染当前步骤的稳定帧计数——否则每帧互踩清零，计数永远达不到阈值
+        //   （2026-09-29 回归修复：喝水配方步骤2卡死 + 跳工序不报警即由此引起）。
+        bool isCurrentStep = _stateMachine == null || step.StepId == _stateMachine.CurrentStepId;
+
+        if (isCurrentStep && step.StepId != _lastEvaluatedStepId)
         {
             _stablePassCounts.Clear();
             _lastEvaluatedStepId = step.StepId;
@@ -93,8 +98,11 @@ public class StepConditionEvaluator
         foreach (var condition in step.PassConditions)
         {
             var result = CheckCondition(condition, detections, handResult, ignoreFromRegion);
-            // P0-2：对未自管理帧计数的条件施加通用稳定帧门控
-            ApplyStableFrameGate(step.StepId, conditionIndex, condition, result);
+            // P0-2：对未自管理帧计数的条件施加通用稳定帧门控（仅对当前步骤生效）
+            if (isCurrentStep)
+            {
+                ApplyStableFrameGate(step.StepId, conditionIndex, condition, result);
+            }
             results.Add(result);
 
             if (!result.IsMet)
@@ -154,7 +162,15 @@ public class StepConditionEvaluator
     /// </summary>
     private void ApplyStableFrameGate(int stepId, int conditionIndex, StepCondition condition, ConditionCheckResult result)
     {
-        if (condition.Type == ConditionType.HandStable || condition.Type == ConditionType.ObjectStable)
+        // 跳过三类：
+        // ① HandStable / ObjectStable —— 内部已含帧计数，叠加会双重计数；
+        // ② HandMoveFromTo —— 拿起/放下的成功判据是"手握物体且位于区域内"这类瞬时交互，
+        //    物体一离开区域条件即翻回 false，真窗口只有几帧，连续帧门控会漏过
+        //    （曾致喝水配方步骤2无法触发）；
+        // ③ TimeElapsed / SequenceComplete —— 自带时序/完成语义，无需防抖。
+        if (condition.Type == ConditionType.HandStable || condition.Type == ConditionType.ObjectStable ||
+            condition.Type == ConditionType.HandMoveFromTo ||
+            condition.Type == ConditionType.TimeElapsed || condition.Type == ConditionType.SequenceComplete)
             return;
 
         int required = condition.StableFrames;
@@ -204,6 +220,16 @@ public class StepConditionEvaluator
     // HandStable 与 ObjectStable 内部已自行管理帧计数，不再叠加门控。
     private readonly Dictionary<string, int> _stablePassCounts = new();
     private int _lastEvaluatedStepId = -1;
+
+    /// <summary>
+    /// 清空稳定帧计数（工作流 Start/Reset 时调用）。
+    /// 防止上一轮残留计数让新一轮的步骤"秒过"，绕过防抖。
+    /// </summary>
+    public void ResetStableCounts()
+    {
+        _stablePassCounts.Clear();
+        _lastEvaluatedStepId = -1;
+    }
 
     private void UpdateHandTracks(HandPoseEstimationResult? handResult)
     {
