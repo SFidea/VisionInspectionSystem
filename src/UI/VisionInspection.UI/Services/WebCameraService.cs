@@ -18,7 +18,7 @@ namespace VisionInspection.UI.Services
 
         private VideoCapture? _capture;
         private bool _isConnected = false;
-        private bool _isGrabbing = false;
+        private volatile bool _isGrabbing = false;
         private CancellationTokenSource? _cancellationTokenSource;
         private Task? _grabTask;
 
@@ -142,13 +142,20 @@ namespace VisionInspection.UI.Services
                     {
                         lock (_captureLock)
                         {
-                            _capture = new VideoCapture(cameraIndex, VideoCaptureAPIs.DSHOW);
-
-                            if (!_capture.IsOpened())
+                            // 后端选择：MSMF 优先——DSHOW 后端对"反复开图/关图"存在已知原生缺陷
+                            //（图销毁是系统级异步，即使进程内串行，紧接的开图仍可能撞上未完成的销毁而 AV 崩溃）。
+                            // MSMF（Media Foundation）对顺序开关稳定得多；打不开再回退 DSHOW。
+                            _capture = TryOpen(cameraIndex, VideoCaptureAPIs.MSMF);
+                            string backend = "MSMF";
+                            if (_capture == null)
                             {
-                                _capture.Dispose();
-                                _capture = null;
-                                ErrorOccurred?.Invoke(this, $"无法打开摄像头 {cameraIndex}");
+                                _capture = TryOpen(cameraIndex, VideoCaptureAPIs.DSHOW);
+                                backend = "DSHOW";
+                            }
+
+                            if (_capture == null)
+                            {
+                                ErrorOccurred?.Invoke(this, $"无法打开摄像头 {cameraIndex}（MSMF/DSHOW 均失败）");
                                 return false;
                             }
 
@@ -156,15 +163,22 @@ namespace VisionInspection.UI.Services
                             // MJPG 可达 30fps（其它软件帧率高通常就是用了 MJPG）。
                             // 相机不支持时该设置会被忽略，不影响采集。
                             _capture.Set(VideoCaptureProperties.FourCC, OpenCvSharp.FourCC.FromString("MJPG"));
+                            _capture.Set(VideoCaptureProperties.Fps, 30);
 
-                            // 请求 1280x720（DSHOW 下多数 UVC 相机可协商；失败则保持相机默认分辨率，不影响采集）
+                            // 请求 1280x720（多数 UVC 相机可协商；失败则保持相机默认分辨率，不影响采集）
                             _capture.Set(VideoCaptureProperties.FrameWidth, 1280);
                             _capture.Set(VideoCaptureProperties.FrameHeight, 720);
 
                             double negotiatedFps = _capture.Get(VideoCaptureProperties.Fps);
+
+                            // 实际生效的像素格式（诊断帧率问题关键：4.3fps@720p 通常意味着 MJPG 未生效、仍在跑 YUY2）
+                            int fcc = (int)_capture.Get(VideoCaptureProperties.FourCC);
+                            string fccStr = System.Text.Encoding.ASCII.GetString(BitConverter.GetBytes(fcc)).TrimEnd('\0');
+
                             string negoInfo =
-                                $"[WebCamera] 摄像头 {cameraIndex} 协商结果: " +
-                                $"{_capture.Get(VideoCaptureProperties.FrameWidth):F0}x{_capture.Get(VideoCaptureProperties.FrameHeight):F0} @ {negotiatedFps:F1}fps";
+                                $"[WebCamera] 摄像头 {cameraIndex} 协商结果[{backend}]: " +
+                                $"{_capture.Get(VideoCaptureProperties.FrameWidth):F0}x{_capture.Get(VideoCaptureProperties.FrameHeight):F0} " +
+                                $"@ {negotiatedFps:F1}fps 格式={fccStr}";
                             System.Diagnostics.Debug.WriteLine(negoInfo);
                             Console.WriteLine(negoInfo);
                         }
@@ -187,6 +201,24 @@ namespace VisionInspection.UI.Services
         }
 
         /// <summary>
+        /// 以指定后端尝试打开相机索引，失败返回 null（不抛异常）
+        /// </summary>
+        private static VideoCapture? TryOpen(int index, VideoCaptureAPIs api)
+        {
+            try
+            {
+                var cap = new VideoCapture(index, api);
+                if (cap.IsOpened()) return cap;
+                cap.Dispose();
+                return null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
         /// 断开连接
         /// </summary>
         public void Disconnect()
@@ -194,7 +226,7 @@ namespace VisionInspection.UI.Services
             try
             {
                 // 先停止采集（确保采集线程完全退出后再释放 capture，避免原生访问冲突）
-                StopGrabbing();
+                bool cleanStop = StopGrabbingCore();
 
                 int releasedIndex = -1;
                 lock (DshowGlobalLock)
@@ -206,20 +238,29 @@ namespace VisionInspection.UI.Services
                             if (CurrentCamera?.ExtInfo != null)
                                 releasedIndex = (int)CurrentCamera.ExtInfo;
 
-                            _capture.Release();
-                            _capture.Dispose();
-                            _capture = null;
+                            if (cleanStop)
+                            {
+                                _capture.Release();
+                                _capture.Dispose();
+                            }
+                            else
+                            {
+                                // ⚠️ 采集线程仍卡在原生 Read 里：此时 Release/Dispose 必然 AV 崩溃。
+                                // 只解除引用（泄漏这张图），绝不触碰原生指针——旧会话已与新图隔离，不会再被访问。
+                                System.Diagnostics.Debug.WriteLine("[WebCamera] 采集线程未退出，跳过 Release（放弃该图以防崩溃）");
+                            }
 
+                            _capture = null;
                             _isConnected = false;
                             System.Diagnostics.Debug.WriteLine("摄像头已断开");
                         }
                     }
 
-                    // DSHOW 图销毁是异步的：紧接其后的新开图（连接另一台相机 / 设备枚举）
+                    // 后端图的销毁是系统级异步的：紧接其后的新开图（连接另一台相机 / 设备枚举）
                     // 会撞上未完成的销毁而原生崩溃，留缓冲让图完全释放
                     if (releasedIndex >= 0)
                     {
-                        Thread.Sleep(250);
+                        Thread.Sleep(500);
                         OccupiedIndices.Remove(releasedIndex);
                     }
                 }
@@ -252,10 +293,23 @@ namespace VisionInspection.UI.Services
 
                 try
                 {
+                    // 会话隔离：把当前 VideoCapture 实例固定进本会话。
+                    // 若该会话被放弃（线程卡在 Read 里），它只会触碰自己这张图，
+                    // 绝不会误读 _capture 字段指向的"下一台相机的新图"
+                    VideoCapture? sessionCapture;
+                    lock (_captureLock) sessionCapture = _capture;
+
+                    if (sessionCapture == null)
+                    {
+                        ErrorOccurred?.Invoke(this, "设备未连接");
+                        return false;
+                    }
+
                     _cancellationTokenSource = new CancellationTokenSource();
                     _isGrabbing = true;
 
-                    _grabTask = Task.Run(() => GrabLoop(_cancellationTokenSource.Token));
+                    var ct = _cancellationTokenSource.Token;
+                    _grabTask = Task.Run(() => GrabLoop(sessionCapture, ct));
 
                     return true;
                 }
@@ -269,18 +323,22 @@ namespace VisionInspection.UI.Services
         }
 
         /// <summary>
-        /// 采集循环：在 _captureLock 保护下读取帧，避免与释放操作并发导致原生崩溃
+        /// 采集循环：在 _captureLock 保护下读取帧，避免与释放操作并发导致原生崩溃。
+        /// sessionCapture 固定为本会话的实例——会话被弃后线程即使从阻塞的 Read 中醒来，
+        /// 也会因 _capture 不再指向该实例而立即退出，绝不触碰新相机的图。
         /// </summary>
-        private void GrabLoop(CancellationToken cancellationToken)
+        private void GrabLoop(VideoCapture sessionCapture, CancellationToken cancellationToken)
         {
             while (!cancellationToken.IsCancellationRequested && _isGrabbing)
             {
                 Mat? frame = null;
                 lock (_captureLock)
                 {
-                    if (_capture == null || !_capture.IsOpened()) break;
+                    if (_capture == null || !ReferenceEquals(_capture, sessionCapture)) break;
+                    if (!sessionCapture.IsOpened()) break;
+
                     frame = new Mat();
-                    if (!_capture.Read(frame) || frame.Empty())
+                    if (!sessionCapture.Read(frame) || frame.Empty())
                     {
                         frame.Dispose();
                         frame = null;
@@ -347,26 +405,42 @@ namespace VisionInspection.UI.Services
         }
 
         /// <summary>
-        /// 停止采集：等待采集线程真正退出，
-        /// 避免采集线程仍在 Read 时释放 VideoCapture 造成 System.AccessViolationException
+        /// 停止采集（对外无返回值版本）
         /// </summary>
         public void StopGrabbing()
+        {
+            StopGrabbingCore();
+        }
+
+        /// <summary>
+        /// 停止采集核心：等待采集线程真正退出。
+        /// 返回 false 表示线程卡在原生 Read 里未退出——此时调用方【绝不能】Release/Dispose，
+        /// 否则触发 System.AccessViolationException（原生层无托管堆栈，进程直接崩溃）。
+        /// </summary>
+        private bool StopGrabbingCore()
         {
             try
             {
                 if (!_isGrabbing)
                 {
-                    // 未在采集：直接返回，不打印日志（避免连接/断开时刷屏"摄像头采集已停止"）
-                    return;
+                    // 未在采集：直接返回（避免连接/断开时刷屏"摄像头采集已停止"）
+                    return true;
                 }
 
                 _isGrabbing = false;
                 _cancellationTokenSource?.Cancel();
 
-                if (_grabTask != null)
+                var task = _grabTask;
+                if (task != null)
                 {
-                    // 等待采集线程退出（Read 可能阻塞，给足时间；超时也不强制释放，避免原生崩溃）
-                    _grabTask.Wait(3000);
+                    // Read 阻塞在死设备上可能长时间不返回，给足 10 秒；
+                    // 仍未退出则报告失败，由 Disconnect 走"放弃释放"路径
+                    bool exited = task.Wait(10000);
+                    if (!exited)
+                    {
+                        System.Diagnostics.Debug.WriteLine("[WebCamera] 采集线程 10 秒未退出");
+                        return false;
+                    }
                     _grabTask = null;
                 }
 
@@ -374,10 +448,12 @@ namespace VisionInspection.UI.Services
                 _cancellationTokenSource = null;
 
                 System.Diagnostics.Debug.WriteLine("摄像头采集已停止");
+                return true;
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"停止采集异常：{ex.Message}");
+                return false;
             }
         }
 
