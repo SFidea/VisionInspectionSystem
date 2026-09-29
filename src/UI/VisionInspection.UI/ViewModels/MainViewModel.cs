@@ -1958,10 +1958,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             _sopModule.StepChanged -= OnSOPStepChanged;
             _sopModule.ViolationDetected -= OnSOPViolationDetected;
             _sopModule.WorkflowCompleted -= OnSOPWorkflowCompleted;
+            _sopModule.StepCompleted -= OnSOPStepCompleted;
             _sopModule.ModelWarning -= OnSOPModelWarning;
             _sopModule.StepChanged += OnSOPStepChanged;
             _sopModule.ViolationDetected += OnSOPViolationDetected;
             _sopModule.WorkflowCompleted += OnSOPWorkflowCompleted;
+            // 步骤完成时若本步无违规 → 清空画面违规横幅（流程恢复正常，红提示消失）
+            _sopModule.StepCompleted += OnSOPStepCompleted;
             _sopModule.ModelWarning += OnSOPModelWarning;
             Console.WriteLine($"[SOP-Audio][DEBUG] MainViewModel 已(重新)订阅 SOP 事件(含 ViolationDetected)，实例={_sopModule?.GetHashCode()}");
 
@@ -2142,12 +2145,36 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         });
     }
 
+    /// <summary>
+    /// 步骤完成：本步无违规（正常走完）→ 清空画面违规横幅。
+    /// 语义：违规提示跟随"出问题的那一步"，该步骤被正常完成后流程恢复正常，红提示消失；
+    /// 若该步仍带违规（如超时后勉强完成）则横幅继续保留。
+    /// </summary>
+    private void OnSOPStepCompleted(object? sender, StepCompletedEventArgs e)
+    {
+        if (e.HasViolations) return;
+
+        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+        {
+            if (_isDisposed) return;
+            lock (_violationToastLock)
+            {
+                _activeViolations.Clear();
+            }
+        });
+    }
+
     private void OnSOPWorkflowCompleted(object? sender, SOPCompletedEventArgs e)
     {
         System.Windows.Application.Current?.Dispatcher.Invoke(() =>
         {
             if (_isDisposed) return;
             var isPass = !e.HasViolations;
+            if (isPass)
+            {
+                // 整个流程无违规 → 清空横幅（兜底，正常情况下步骤完成时已清）
+                lock (_violationToastLock) _activeViolations.Clear();
+            }
             SopStatus = isPass ? "✅ SOP 全部通过" : "❌ SOP 检测不通过";
             Status = isPass
                 ? $"SOP 完成: 全部 {TotalSteps} 步通过"
