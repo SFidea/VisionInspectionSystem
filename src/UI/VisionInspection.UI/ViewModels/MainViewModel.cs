@@ -213,6 +213,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     private SOPModuleResult? _lastSopResult;
     private int _noSopResultFrameCount = 0;
 
+    // ---- 违规提示横幅（绘制在主相机画面顶部）----
+    // 违规事件发生即时推入（不等下一次推理结果），由 OnCameraFrameGrabbed 在最新帧上绘制。
+    // 触发方（OnSOPViolationDetected，UI 线程）与绘制方（OnCameraFrameGrabbed，相机采集线程）不同 → 加锁。
+    private readonly List<ViolationToast> _activeViolations = new();
+    private readonly object _violationToastLock = new();
+
+    private sealed record ViolationToast(DateTime Time, string TypeName, string Description);
+
     // ---- 区域监控（在标定区域内检测"未戴安全帽的人"）状态 ----
     private DateTime _regionAlertLastTime = DateTime.MinValue;
     private bool _regionAlertActive = false;
@@ -312,6 +320,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable
                     && _lastHandPoseResult is { Hands.Count: > 0 })
                 {
                     DrawHandPoses(canvas, _lastHandPoseResult);
+                }
+
+                // ③ 违规提示横幅（仅主相机画面）：违规事件即时推入缓存，随帧持续绘制
+                if (isPrimary)
+                {
+                    DrawViolationBanner(canvas, skBitmap.Info);
                 }
             }
             catch (Exception ex)
@@ -1220,6 +1234,92 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
+    /// 违规提示横幅：主相机画面顶部红色横幅显示最新违规内容（类型 + 描述），
+    /// 其下以小字列出更早的违规（最多 2 条）。最新违规出现后前 2 秒闪烁高亮，之后常驻
+    /// 直到停止/复位 SOP——违规提示必须醒目且不消失，符合工业场景"发生即告警"的要求。
+    /// 由 OnCameraFrameGrabbed（采集线程）逐帧调用，缓存读取加锁。
+    /// </summary>
+    private void DrawViolationBanner(SKCanvas canvas, SKImageInfo info)
+    {
+        List<ViolationToast> toasts;
+        lock (_violationToastLock)
+        {
+            if (_activeViolations.Count == 0) return;
+            toasts = new List<ViolationToast>(_activeViolations);
+        }
+
+        try
+        {
+            using var typeface = SKTypeface.FromFamilyName("Microsoft YaHei");
+            var latest = toasts[toasts.Count - 1];
+            double age = (DateTime.Now - latest.Time).TotalSeconds;
+
+            // 最新违规前 2 秒透明度闪烁（~1.25Hz）引起注意，之后稳定常驻
+            byte alpha = age < 2 ? (byte)(190 + 65 * Math.Abs(Math.Sin(age * Math.PI * 2.5))) : (byte)215;
+
+            const float bannerH = 56f;
+            using (var bg = new SKPaint { Color = new SKColor(204, 0, 0, alpha), Style = SKPaintStyle.Fill })
+            {
+                canvas.DrawRect(0, 0, info.Width, bannerH, bg);
+            }
+            // 左侧橙色警示竖条
+            using (var bar = new SKPaint { Color = new SKColor(255, 140, 0, alpha), Style = SKPaintStyle.Fill })
+            {
+                canvas.DrawRect(0, 0, 6, bannerH, bar);
+            }
+
+            string latestText = $"⚠ 违规（{latest.TypeName}）：{latest.Description}";
+            using (var big = new SKPaint
+            {
+                Color = SKColors.White,
+                TextSize = 26,
+                IsAntialias = true,
+                FakeBoldText = true,
+                Typeface = typeface
+            })
+            {
+                canvas.DrawText(latestText, 16, 37, big);
+            }
+
+            // 历史违规（更早的最多 2 条）：横幅下方小字，带时间
+            using (var small = new SKPaint
+            {
+                Color = new SKColor(255, 255, 255, 235),
+                TextSize = 17,
+                IsAntialias = true,
+                FakeBoldText = true,
+                Typeface = typeface
+            })
+            {
+                float y = bannerH + 22;
+                for (int i = toasts.Count - 2; i >= 0 && i >= toasts.Count - 3; i--)
+                {
+                    var t = toasts[i];
+                    canvas.DrawText($"{t.Time:HH:mm:ss} [{t.TypeName}] {t.Description}", 16, y, small);
+                    y += 24;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"绘制违规横幅异常: {ex.Message}");
+        }
+    }
+
+    /// <summary>违规类型的中文显示名</summary>
+    private static string ViolationTypeText(ViolationType type) => type switch
+    {
+        ViolationType.SkipStep => "跳过工序",
+        ViolationType.WrongOrder => "顺序错误",
+        ViolationType.Timeout => "超时",
+        ViolationType.ForbiddenObject => "出现违禁物",
+        ViolationType.ObjectRemoved => "物体被移除",
+        ViolationType.ZoneIntrusion => "区域闯入",
+        ViolationType.MissingRequiredObject => "漏放/缺料",
+        _ => "违规"
+    };
+
+    /// <summary>
     /// 仅绘制的关键手部关键点（约 50% 降采样：手腕 + 5 个掌指关节 MCP + 5 个指尖 = 11 点）。
     /// 去掉 PIP/DIP 等中间关节，减少视觉杂乱，同时保留手势结构所需的全部关键位置。
     /// </summary>
@@ -1950,6 +2050,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         _detectionSmoother.Clear();
         _lastSopResult = null;
         _noSopResultFrameCount = 0;
+        // 清空画面违规横幅缓存（停止检测即不再提示）
+        lock (_violationToastLock) _activeViolations.Clear();
         // 清空多相机检测结果缓存与告警标记
         _perCameraLastResults.Clear();
         foreach (var item in CameraViews)
@@ -1971,6 +2073,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     public void ResetSOPWorkflow()
     {
         _sopModule?.ResetWorkflow();
+        // 复位即清空画面违规横幅（新一轮流程从干净状态开始）
+        lock (_violationToastLock) _activeViolations.Clear();
         SopStatus = "SOP 工作流已重置";
         Status = "SOP 工作流已重置，从第一步重新开始";
     }
@@ -2017,6 +2121,15 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         System.Windows.Application.Current?.Dispatcher.Invoke(() =>
         {
             if (_isDisposed) return;
+
+            // 违规即时入栈（最多保留 3 条，新的顶掉最旧的），供画面横幅绘制
+            lock (_violationToastLock)
+            {
+                _activeViolations.Add(new ViolationToast(
+                    DateTime.Now, ViolationTypeText(e.Violation.Type), e.Violation.Description));
+                if (_activeViolations.Count > 3) _activeViolations.RemoveAt(0);
+            }
+
             SopStatus = $"⚠ 违规: {e.Violation.Description}";
             Status = $"⚠ SOP 违规: [{e.Violation.Type}] {e.Violation.Description}";
             // 跳步（中间跳了工序）→ 播放 ng.wav
