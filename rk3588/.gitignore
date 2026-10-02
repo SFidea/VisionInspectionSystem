@@ -1,0 +1,52 @@
+# =============================================================================
+#  RK3588 移植工程 — .gitignore
+# =============================================================================
+
+# ---- 编译产物 ----
+build/
+build-*/
+cmake-build-*/
+*.o
+*.a
+*.so
+*.so.*
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+install_manifest.txt
+
+# ---- 模型（走部署包，不入库）----
+models/*.rknn
+models/*.onnx
+models/*.tflite
+models/*.task
+models/*.m
+models/*.param
+models/*.bin
+!models/.gitkeep
+
+# ---- 录制/对拍产物 ----
+golden/
+*.jsonl
+!rk3588/docs/**/*.jsonl
+captures/
+logs/
+*.log
+
+# ---- 板端运行数据 ----
+sop_records/
+sop_captures/
+configs/last_recipe.json
+configs/communication_config.json
+configs/sop_capture.json
+
+# ---- 第三方（按方案第十三章，只允许 Apache-2.0 / BSD-3 / MIT）----
+third_party/*/
+!third_party/README.md
+
+# ---- 编辑器 ----
+.vscode/
+.idea/
+*.user
+compile_commands.json

@@ -262,38 +262,55 @@ npu/
 | 决策点 | 结论 |
 |---|---|
 | 技术栈 | **C++17 + Qt6 Widgets**（RKNN Runtime C API，产品化首选） |
-| 手部推理 | **全部走 NPU（INT8）**：palm(192²) + landmark(224²) 均转 `.rknn` |
+| 手部推理 | ★ **YOLOv8-pose 手部检测 + 关键点**（2026-10-03 Sir 拍板，路线 B），**放弃 MediaPipe palm+landmark** |
+| 手部模型来源 | `rknn_model_zoo` 官方 `yolov8_pose` 示例为基线；手部专项模型走自训练 + 转换 |
 | UI 形态 | **Qt Widgets 面板**，布局/配色/计数/违规横幅沿用现 WPF 版 |
-| 首期范围 | **先 1 个配方端到端跑通**（建议选 `sop_cup_usage.yaml` 喝水流程——同时覆盖 YOLO 检测类与 MediaPipe 手部动作类条件，最能压测全链路），验证架构后再铺开 5 个配方 |
+| 工程位置 | **全部代码放 `rk3588/` 独立文件夹**，与 Windows WPF 版物理隔离（详见第十四章） |
+| 首期范围 | **先 1 个配方端到端跑通**（建议选 `sop_cup_usage.yaml` 喝水流程——同时覆盖 YOLO 检测类与手部动作类条件，最能压测全链路），验证架构后再铺开 5 个配方 |
 
-### 11.1 因"手部全 NPU"而必须挂的精度闸门
+### 11.1 路线 B 的代价与补偿（必须明确记录）
 
-全 NPU 是最快路径（端到端约 15ms），但 landmark INT8 量化存在掉点风险，且会直接改变 `HandStable`/`HandMoveFromTo` 的判定。因此 P2 阶段设**硬性验收闸门**，不达标即切混合方案（架构已预留，`IDetector` 运行时可切）：
+**决策理由**：MediaPipe landmark 转 RKNN 只有 Python 先例、C++ 流水线需完全自研，工期与精度双重不确定；YOLOv8-pose 有官方 C 示例 + 社区 RK3588 实证，后处理可复用我方现有 YOLO 解码。
+
+**代价（诚实记录）**：`HandStable` / `HandMoveFromTo` / `HandNearObject` 三类条件依赖的 21 个关键点，其**序号、坐标定义、可见性语义与 MediaPipe 不同**。这意味着"100% 保留"从"逐点同源"退化为"**行为等价**"。
+
+**补偿机制（保住"100% 保留"的实质）**：
+
+| 补偿项 | 做法 |
+|---|---|
+| ① 关键点语义归一 | 推理层出口统一封装为 `HandResult`，内部做 **MediaPipe 序号 → 统一语义槽位** 的映射（掌心/食指尖/拇指尖/腕…）。SOP 引擎**只看语义槽位，不认具体序号**，引擎代码零改动 |
+| ② 区域坐标换算 | 区域定义改为**基于 palm/wrist box 的归一化相对坐标**，不再绑定具体关键点序号 → 换模型不必重标 |
+| ③ 行为级对拍 | 判定对象从"关键点坐标"上移到"**条件判定结果**"：`decisions.jsonl` 记录 12 类条件的逐帧 true/false，板端与 Windows 版**逐帧比对布尔结果**，而非比对浮点坐标 |
+| ④ 不动阈值 | `stable_frames` / 区域容差**一律不改**。若行为对拍出现差异，处置顺序是：① 修推理层映射 → ② 换模型精度档位（FP16） → ③ 记入《配方差异表》并由 Sir 逐条裁决，**不得私自调阈值** |
+
+> 详细的序号映射表、坐标系差异、区域换算公式见 `rk3588/docs/手部关键点映射与区域换算.md`。
+
+### 11.2 精度闸门（路线 B 版）
 
 | 闸门 | 指标 | 不达标处置 |
 |---|---|---|
-| G1 转换健康度 | `rknn.build(verbose)` 无 CPU fallback 告警 | 改图结构 / 拆分模型 / 退回 CPU 算子 |
-| G2 检测框对拍 | 同批生产帧，RKNN vs Windows ONNX，框 IoU ≥0.9 比例 ≥95% | 校准集换现场真图；仍不达标则该模型走 FP16 |
-| G3 关键点对拍 | palm box 偏差 <2%；**landmark 21 点平均误差 <5px** | **切混合方案：palm=NPU + landmark=CPU FP32** |
-| G4 行为对拍 | 同帧序列下，5 类手部条件的判定与 Windows 版逐帧一致 | 调整区域/阈值（记入配方差异表，不改代码） |
-
-> 说明：`stable_frames` 与区域坐标**不动**来迁就量化误差——一旦为板子单独改阈值，"100% 保留"就名存实亡。阈值只允许因 G4 判定差异而**记录在案**。
+| G1 转换健康度 | `rknn.build(verbose)` 无 CPU fallback 告警 | 改图结构 / 拆模型 / 退回 CPU 算子 |
+| G2 手部检测框对拍 | 同批生产帧，RKNN vs Windows 版，框 IoU ≥0.9 比例 ≥95% | 校准集换现场真图；仍不达标该模型走 FP16 |
+| G3 关键点对拍 | 同 palm box 下，**语义槽位**平均误差 <5px / 归一化 <2% | 提高输入分辨率、换更大模型档位（pose-m/s） |
+| G4 **行为对拍**（主闸门） | 同帧序列下，12 类条件判定结果与 Windows 版**逐帧一致率 ≥98%**；5 类手部条件**必须 100%** | 逐条排查推理层映射；差异记入配方差异表，Sir 裁决 |
 
 ---
 
 ## 十二、开工顺序（按决策落地）
 
 ```
-P0 基线录制  →  P1 引擎移植+离线对拍(100%一致)  →  [P1.5 手部路线 Spike 1天]
-   (2天)              (4~5天, 纯C++不碰板子)              (1天, 决定A/B/C路线)
-        →  P2 RKNN推理+G1~G4闸门(6~8天,含landmark流水线自研)
+P0 基线录制  →  P1 引擎移植+离线对拍(100%一致)  →  P2 手部YOLOv8-pose接入+G1~G4闸门
+   (2天)              (4~5天, 纯C++不碰板子)              (5~6天)
         →  P3 Qt面板+V4L2+Modbus, 单配方端到端  →  P4 整场对拍+三核调优+打包
               (5~6天)                                (3~4天)
 ```
 
 建议现在只启动 **P0**（在 Windows 版加旁路录制器 + 产出黄金数据集）——这一步不动板子、不改引擎行为，且是后续所有"一致性验证"的唯一依据。P0 完成后再进 P1。
 
-> P1.5 是 2026-10-03 调研后新增的卡点：MediaPipe landmark 转 RKNN **无 C++ 开源先例**，须先用最小样例实测 G3 闸门，再决定 P2 走 A（全 NPU）/ B（YOLOv8-pose）/ C（混合）哪条路线，避免 6~8 天投入后才发现精度不达标。详见第十三章 13.3。
+> **2026-10-03 变更**：原计划的 P1.5「三选一 Spike」已被 Sir 拍板的**路线 B（YOLOv8-pose）取代**，无需再评估 A/C。
+> 代价与补偿见 11.1，闸门见 11.2。P2 相比原估（6~8 天）**回落至 5~6 天**，因为不再需要自研 MediaPipe landmark 的
+> 裁剪/仿射对齐/反投影流水线；YOLOv8-pose 有官方 C 示例且后处理可复用我方 YOLO 解码。
+> **前提**：手部专项模型须先训出来（训练在 PC 上做，不占板端工期）。
 
 ---
 
@@ -325,28 +342,74 @@ P0 基线录制  →  P1 引擎移植+离线对拍(100%一致)  →  [P1.5 手�
 | `rockchip-linux/mpp` | 1082 | 无 | MPP 硬编解码，仅 H.264 场景需要 |
 | ⚠️ `airockchip/ultralytics_yolov8` | 372 | **AGPL-3.0** | **许可证雷区**：仅可读不可抄，闭源商用必须避开 |
 
-### 13.3 ⚠️ 重大风险：MediaPipe → RKNN 无 C++ 先例
+### 13.3 ⚠️ 已定路线：B（YOLOv8-pose）——原 A 路线的风险与被否原因
 
-原方案"手部全 NPU（palm + landmark 均转 `.rknn`）"的调研结论需要修正：
+**原风险（促成改决策的依据）**：
+MediaPipe 手部转 RKNN **有 RK3588 实证但仅限 Python**（拆 `.task` → 4 个 tflite → rknn，板上手写流水线），**C++ 版无任何开源实现**。
+palm 检测（本质是目标检测）尚可，但 **landmark 21 点的 NPU C++ 前后处理（手部裁剪、仿射变换对齐、归一化、坐标反投影）要完全自研**，
+而这块正是 `HandStable` / `HandMoveFromTo` / `HandNearObject` 三类条件的精度命门。社区称关键点误差 ~3%，但**无严谨基准**，与 G3 闸门（<5px）无法直接对齐。
 
-- MediaPipe 手部**转 RKNN 有 RK3588 实证，但仅限 Python**（拆 `.task` → 4 个 tflite → rknn，板上手写流水线）。**C++ 版无任何开源实现**。
-- 即：palm 检测（本质就是目标检测）好办；**landmark 21 点的 NPU C++ 前后处理（手部裁剪、仿射变换对齐、归一化、坐标反投影）要完全自研**，且这块正是 `HandStable` / `HandMoveFromTo` / `HandNearObject` 三类条件的精度命门。
-- 社区量化精度参考：关键点误差 ~3% 以内，但**无严谨基准**，与本项目 G3 闸门（<5px）不能直接对齐。
+**2026-10-03 决策：采纳路线 B。**
 
-**处置建议（P0 之后、P2 之前插入一个 1 天 Spike）**：
+| 路线 | 结论 |
+|---|---|
+| A. MediaPipe palm+landmark 全 NPU | ✗ **否决**。C++ 流水线自研，工期与精度双重不确定 |
+| **B. YOLOv8-pose 手部检测 + 关键点** | ✓ **采纳**。`rknn_model_zoo` 有官方 C 示例，RK3588 有社区实证，后处理复用我方 YOLO DFL 解码 |
+| C. 混合 palm=NPU + landmark=CPU | ✗ 不需要。B 已覆盖且更简洁 |
 
-| 路线 | 成本 | 风险 | 适用 |
-|---|---|---|---|
-| **A. MediaPipe palm+landmark 全 NPU**（原方案） | landmark 流水线全自研，C++ 无先例 | 高（精度 + 工期双重不确定） | 若 G3 通过则最优 |
-| **B. YOLOv8-pose 手部替代** | 最低。`rknn_model_zoo` 有官方 `yolov8_pose` 示例，C++ 后处理可复用我方现有 YOLO 解码 | 中（**关键点语义不同**，需重标定区域/阈值，触碰"100% 保留"红线） | 作为 A 的备选 |
-| **C. 混合：palm=NPU + landmark=CPU(NEON FP32)** | 低 | 低（精度最接近现有行为） | G3 不达标时的兜底，架构已预留 |
+**采纳 B 的前置条件（必须在 P2 启动前完成）**：
 
-> 路线 A 与 C 均**不改 `stable_frames`、不改区域坐标**，可保"100% 保留"；路线 B 会改变 landmark 误差分布，**必须先在方案层面重新确认铁律边界**。
+1. **手部专项模型训练**（PC 侧，不占板端工期）：以 `rknn_model_zoo` 的 `yolov8_pose` 为基线结构，训练**手部 21 点专项模型**
+   （可参考 `ZyWang7/Hand_Landmark_Detection` 讯飞赛题数据集微调）。
+2. **语义映射表落地**：见 `rk3588/docs/手部关键点映射与区域换算.md`。推理层出口必须统一封装 `HandResult`，引擎只看语义槽位、不认模型序号。
+3. **区域定义改造**：区域坐标基于 palm/wrist box 的归一化相对量，不绑定具体关键点序号 → 换模型不重标。
 
 ### 13.4 对实施计划的影响
 
-1. **P2 工期需上修**：landmark NPU 流水线自研（原估 4~5 天 → 建议 **6~8 天**），或按 13.3 先做 1 天 Spike 再定。
-2. **P1 完成后可直接拉骨架**：`khadas_yolov8n_multithread` 的三核 worker 池 + RGA + V4L2 拿来做推理层基座，把我方代码只填在 `IDetector` 实现与 SOP 引擎两处，**可省 1~1.5 周**。
-3. **P0 黄金数据集的 `inputs.jsonl` 字段设计需覆盖 palm box**，这样后续无论走 A/B/C 路线，检测框与关键点都能分别对拍，不必重录。
-4. **许可证合规**：自建仓库只允许引入 Apache-2.0 / BSD-3 / MIT 代码；AGPL（`ultralytics_yolov8`）与无许可证（Gitee 框架、MPP）**只读不抄**。
+1. **P2 工期回落**：5~6 天（不再需要自研 MediaPipe landmark 流水线），但**新增"手部模型训练"前置项**（PC 侧并行，不占板端工期）。
+2. **P1 完成后直接拉骨架**：`khadas_yolov8n_multithread` 的三核 worker 池 + RGA + V4L2 拿来做推理层基座，我方代码只填 `IDetector` 实现与 SOP 引擎两处，**可省 1~1.5 周**。
+3. **P0 黄金数据集的 `inputs.jsonl` 字段设计需覆盖 palm box 与 21 点**，这样 B 路线的框与关键点都能分别对拍，不必重录。
+4. **对拍基准上移**：`decisions.jsonl` 必须记录 **12 类条件的逐帧 true/false**（而非仅关键点坐标）——路线 B 下浮点坐标不可能逐点相同，**行为一致才是验收标准**。
+5. **许可证合规**：自建仓库只允许引入 Apache-2.0 / BSD-3 / MIT 代码；AGPL（`ultralytics_yolov8`）与无许可证（Gitee 框架、MPP）**只读不抄**。
+
+---
+
+## 十四、工程目录约定（2026-10-03 新增）
+
+**全部 RK3588 移植代码放 `rk3588/` 独立文件夹**，与 Windows WPF 版（`src/`）物理隔离：
+
+```
+rk3588/
+├─ CMakeLists.txt              顶层构建（交叉编译 aarch64）
+├─ README.md                   目录导航 + 编译部署说明
+├─ engine/                     ★ SOP 引擎（100% 移植，检测器无关）
+│  ├─ include/sop/             types / state_machine / evaluator / violation / yaml
+│  ├─ src/
+│  └─ tests/                   离线单测 + 回放对拍工具
+├─ inference/                  推理层（可插拔 IDetector 后端）
+│  ├─ include/                 detector.h（Detection / HandResult 结构定义在此）
+│  ├─ rknn/                    RKNN Runtime 封装 + 三核 worker 池
+│  ├─ yolo/                    YOLOv8 DFL 解码 + NMS
+│  └─ hand/                    ★ 手部：YOLOv8-pose 推理 + 语义映射（替代 MediaPipe）
+├─ device/                     设备层
+│  ├─ camera_v4l2/             V4L2 NV12 取流（io-mode=4 dmabuf + mmap）
+│  ├─ modbus/                  Modbus RTU/TCP（03 读 X / 06 写 Y）
+│  ├─ audio/                   ALSA 音效（ng / ok）
+│  └─ rga/                     RGA 零拷贝预处理
+├─ ui/                         Qt 6 Widgets 面板
+│  ├─ main_window/  config/  wizard/  dashboard/
+├─ tools/
+│  ├─ rknn_convert/            模型转换脚本（PC 侧 x86）
+│  ├─ replay/                  黄金回放对拍工具
+│  └─ bench/                   板端性能基准（RKNN 版）
+├─ configs/sop/                ★ 配方：直接从 Windows 版拷贝，原样可跑
+├─ models/                     .rknn 模型（不入 git，走部署包）
+└─ docs/                       移植台账与专项文档
+```
+
+**硬约定**：
+1. `engine/` **不 include 任何推理/相机/UI 头文件**，只依赖 `inference/include/detector.h` 的纯数据结构 → 保证可离线单测、可逐帧对拍。
+2. `configs/sop/*.yaml` 从 `src/UI/VisionInspection.UI/configs/sop/` **原样拷贝**，不改任何格式。
+3. `models/` 与编译产物入 `.gitignore`，板端部署包单独打包。
+4. 移植进度与差异全部记入 `rk3588/docs/移植台账.md`，**每次对拍结果都要落档**。
 
