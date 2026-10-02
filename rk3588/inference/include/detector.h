@@ -55,19 +55,30 @@ struct Detection {
 // =============================================================================
 //  3. 手部关键点 —— 语义槽位化
 // =============================================================================
-//  【勘察结论 2026-10-03】Windows 版 SOP 手部判定主路径是
-//  YoloPoseHandEstimationService（YOLO COCO Pose），不是 MediaPipe。
-//  C# 侧 HandPose 用【枚举型 HandKeypointType】，本就不依赖 21 点序号。
-//  保留语义槽位的原因：换 RKNN 模型时模型 kpt 顺序可能变，
-//  显式对照表能把改动收敛到 hand_kpt_map.cpp 一个文件，避免静默判错。
+//  【勘察结论 2026-10-03，经三轮源码勘察】
+//  Windows 版真实链路（类名 YoloPoseHandEstimationService 有误导性）：
+//     ① YOLOv8-pose 检测【人体】，取手腕定位 → 裁剪 224×224
+//     ② MediaPipe Landmark（hand_landmark_sparse_Nx3x224x224.onnx）在裁剪图上出 21 点
+//     ③ 反变换：x/224 → ×cropRect.W/H → +cropRect.Left/Top → 原图坐标
+//     ④ HandPose.Keypoints ← 21 个 HandKeypoint，置信度【硬编码 0.9f】
+//  即 MediaPipe 确实在主路径上；21 点序号与 MediaPipe 标准一致。
+//
+//  【为何仍要语义槽位】RKNN 侧换模型后 kpt 顺序由训练 label 决定，
+//  显式对照表把改动收敛到 hand_kpt_map.cpp 一个文件，避免静默判错。
 // -----------------------------------------------------------------------------
-//  COCO Pose 17 点标准索引（若沿用官方人体 pose 模型）：
-//    0 Nose  1 LEye 2 REye 3 LEar 4 REar
-//    5 LShoulder 6 RShoulder 7 LElbow 8 RElbow
-//    9 LWrist  10 RWrist  11 LHip  12 RHip
-//    13 LKnee 14 RKnee  15 LAnkle 16 RAnkle
-//  ⚠️ 注意：COCO 的腕是 9/10（不是 15/16，15/16 是踝）。
-//     映射文档里若出现 15/16 需按实际模型 metadata 复核。
+//  C# HandKeypointType 完整定义（21 项，序号 = MediaPipe 标准）：
+//    0 Wrist | 1 ThumbCMC 2 ThumbMCP 3 ThumbIP 4 ThumbTip
+//    5 IndexFingerMCP 6 IndexFingerPIP 7 IndexFingerDIP 8 IndexFingerTip
+//    9 MiddleFingerMCP 10 ...PIP 11 ...DIP 12 ...Tip
+//   13 RingFingerMCP 14 ...PIP 15 ...DIP 16 ...Tip
+//   17 PinkyMCP 18 PinkyPIP 19 PinkyDIP 20 PinkyTip
+//
+//  ⚠️ C++ 侧【必须输出 21 点】。原因见 handCenter()：分母 = 实际点数，
+//     点数变化会让中心物理位置系统性偏移 → HandInRegion/HandStable 判定改变。
+//
+//  ⚠️ COCO Pose 17 点人体模型【不适用】于本项目：其腕为 9(LWrist)/10(RWrist)，
+//     15/16 是踝。YOLOv8-pose 在此链路中只用于【找手腕位置】，
+//     不直接提供 21 点手部关键点。
 // -----------------------------------------------------------------------------
 enum class HandSlot : int {
     kWrist      = 0,   // 腕关节（所有 HandInRegion / 稳定判定基准）
@@ -85,27 +96,76 @@ enum class HandSlot : int {
 
 inline constexpr int kHandSlotCount = static_cast<int>(HandSlot::kCount);
 
-// 关键点置信度低于此值视为无效（与 C# 版 HandLandmark visibility 阈值对齐，
+// 关键点置信度低于此值视为无效（与 C# 版 HandKeypoint.IsValid 对齐，
 // 具体数值见 rk3588/docs/移植台账.md「阈值对齐表」）
 inline constexpr float kHandPointMinScore = 0.5f;
+
+// ★ 与 C# HandPose.IsValidGesture(default) 对齐
+inline constexpr int   kHandMinValidPoints = 8;
+
+// =============================================================================
+//  ★★★ GetCenter() —— 移植时最容易错的一处，务必照抄
+// =============================================================================
+//  C# 原码（HandPoseEstimationModels.cs:108）：
+//      if (Keypoints.Count == 0) return new SKPoint(0, 0);
+//      float avgX = Keypoints.Average(k => k.X);
+//      float avgY = Keypoints.Average(k => k.Y);
+//  即【全部关键点的算术平均】，不是 bbox 中心、不是腕点、不是 palm center(MCP均值)。
+//
+//  ⚠️ 关键点置信度在 C# 侧是【硬编码 0.9f】，列表内恒定，
+//     故"过滤低分点"与"不过滤"在此等价 —— 但仍须保证【有效点数一致】。
+//
+//  ⚠️ 分母 = 实际点数。C# 侧循环是 `i < landmarks.Count && i < 21`，
+//     即实际可能少于 21 点。RKNN 侧【必须输出与 Windows 版实测一致的点数】，
+//     否则中心物理位置系统性偏移 → HandInRegion/HandStable 判定改变（G4 必挂）。
+//
+//  ⚠️ 语义对比：
+//     手部判定 HandInRegion  → 【中心点包含】(zoneRect.Contains(center))
+//     物体判定 IsInZone      → 【矩形相交】(box.Intersects(zone))
+//     两者语义不同，不可混用。
+//
+//  ⚠️ 本函数 ≠ kPalmCenter（后者是 5 指 MCP 均值，当前 C# 判定链路并未使用）。
+inline Point handCenter(const HandResult& h) {
+    float sx = 0.0f, sy = 0.0f;
+    int n = 0;
+    for (int i = 0; i < 21; ++i) {
+        if (h.scores[i] >= kHandPointMinScore) {   // 仅统计有效点
+            sx += h.points[i].x;
+            sy += h.points[i].y;
+            ++n;
+        }
+    }
+    if (n == 0) return Point{0.0f, 0.0f};          // 与 C# 的 (0,0) 一致
+    return Point{sx / n, sy / n};
+}
 
 struct HandResult {
     // 21 个点的原始缓冲（保留原始顺序，便于对拍时逐点比对 Windows 版输出）
     std::array<Point, 21> points{};
     std::array<float,  21> scores{};
 
-    // ★ 语义槽位视图：引擎【只用】这个，不碰上面的 points
+    // ★ 实际有效关键点个数。GetCenter() 的分母就是它，
+    //   须与 Windows 版实测一致，否则中心偏移导致 G4 对拍失败。
+    int   validPointCount = 0;
+
+    // ★ 语义槽位视图：条件判定用这个，不碰上面的 points
     std::array<Point, kHandSlotCount> slot{};
     std::array<bool,  kHandSlotCount> slotValid{};
 
     Rect  box;                 // 手部外框
-    bool  isLeft  = false;     // 左右手（推断自几何，无法用颜色区分）
+    bool  isLeft  = false;     // 左右手（HandType.Left=1 / Right=2）
     float score   = 0.0f;      // 手部整体置信度
-    int   trackId = -1;
+    int   trackId = -1;        // C# 侧固定：Left→0, Right→1
 
     bool valid() const { return box.valid() && score > 0.0f; }
 
-    // 取语义槽位坐标；槽位无效时返回 fallback（默认取框中心）
+    // 对齐 C# HandPose.IsValidGesture（SelectHand 两处调用均传 minValid=8，
+    // 非方法默认值 15）
+    bool isValidGesture(int minValid = kHandMinValidPoints) const {
+        return validPointCount >= minValid;
+    }
+
+    // 取语义槽位坐标；槽位无效时返回 fallback
     Point slotPoint(HandSlot s) const {
         int i = static_cast<int>(s);
         if (i < 0 || i >= kHandSlotCount || !slotValid[i]) {
