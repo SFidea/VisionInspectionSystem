@@ -284,11 +284,69 @@ npu/
 ## 十二、开工顺序（按决策落地）
 
 ```
-P0 基线录制  →  P1 引擎移植+离线对拍(100%一致)  →  P2 RKNN推理+G1~G4闸门
-   (2天)              (4~5天, 纯C++不碰板子)              (4~5天)
+P0 基线录制  →  P1 引擎移植+离线对拍(100%一致)  →  [P1.5 手部路线 Spike 1天]
+   (2天)              (4~5天, 纯C++不碰板子)              (1天, 决定A/B/C路线)
+        →  P2 RKNN推理+G1~G4闸门(6~8天,含landmark流水线自研)
         →  P3 Qt面板+V4L2+Modbus, 单配方端到端  →  P4 整场对拍+三核调优+打包
               (5~6天)                                (3~4天)
 ```
 
 建议现在只启动 **P0**（在 Windows 版加旁路录制器 + 产出黄金数据集）——这一步不动板子、不改引擎行为，且是后续所有"一致性验证"的唯一依据。P0 完成后再进 P1。
+
+> P1.5 是 2026-10-03 调研后新增的卡点：MediaPipe landmark 转 RKNN **无 C++ 开源先例**，须先用最小样例实测 G3 闸门，再决定 P2 走 A（全 NPU）/ B（YOLOv8-pose）/ C（混合）哪条路线，避免 6~8 天投入后才发现精度不达标。详见第十三章 13.3。
+
+---
+
+## 十三、开源项目借鉴调研（2026-10-03）
+
+> 目的：不在"从零手搓 RK3588 全栈"上浪费工期。以下 star / 许可证 / 活跃度为调研时点实测，**引用前需二次核实**。
+
+### 13.1 结论速览（按可借鉴程度分级）
+
+| 级别 | 项目 | 一句话 |
+|---|---|---|
+| 🟢 **可整体移植骨架** | `alebal123bal/khadas_yolov8n_multithread` | **首选骨架**：C++17 + 3 NPU 核 worker 池 + RGA 预处理 + V4L2/DRM + GStreamer RTSP + 交叉编译脚本 + 多进程 IPC 架构，与本项目目标架构高度重合 |
+| 🟢 可直接抄码 | `cqu20160901/yolov8n_rknn_Cplusplus_dfl` | YOLOv8 **DFL 头 C++ 解码**（board 45 解码逻辑，我方后处理要重写一次） |
+| 🟢 可直接抄码 | `yingliuzhizhuzed/RK3588_RKNN_MPP_RGA_demo` | Qt5 + MPP 硬解 + RGA + RKNN + **DMA buffer 全栈骨架**（含 `dma_alloc` 实现） |
+| 🟡 抄架构 | `Qengineering/YoloV8-NPU` | Qt5+GTK 推理 demo，RKNN 封装简洁清晰，教程级参考（已 2 年未更新，API 需对齐 v2.x） |
+| 🟡 抄架构 | `lzy18001500226/ZhiYuCangQiong_RK3588` | 少数**含 `yolov8_pose` 任务模块**的 RK3588 C++ 仓库，可参考 pose 后处理接线 |
+| 🟡 抄架构 | `gitee.com/pomimi/monitoring-system` | 唯一找到的 **Qt6 + RKNN Zoo + MPP + RGA + GStreamer + 三级看门狗**完整框架。⚠️ Gitee 无许可证 → **只能看架构不可抄码** |
+| ⚪ 死路 | 官方 `rknn_model_zoo` 手部示例 | **没有 hand / landmark 示例**（有 yolov8_pose、yolo11、yolov8_obb、yolov10） |
+| ⚪ 死路 | RTMPose → RKNN | 官方 MMDeploy 有转换 config，但多人报 `Expand:Div_broadcast` 算子提交失败；**无 C++ 板端开源实现** |
+| ⚪ 死路 | SOP/装配监控类开源 | 全部是学术玩具（0~8 star，YOLO+LSTM 时序分类，非 FSM），**无开源 SOP 状态机框架** |
+
+### 13.2 官方与工具链基座（必用，非可选）
+
+| 仓库 | star | 许可证 | 说明 |
+|---|---|---|---|
+| `airockchip/rknn-toolkit2` | 3417 | 非标准 | v2.3.2 转换工具链，含 aarch64 `rknn-toolkit-lite2` wheel |
+| `airockchip/rknn_model_zoo` | 2797 | Apache-2.0 | 官方 C demo，**RK3588 明确在支持列表**，有交叉编译脚本 |
+| `rockchip-linux/rknpu2` | 865 | BSD-3 | `librknnrt.so` + `rknn_api.h` C API 源。⚠️ **已停更**（tag 止于 v1.5.2），新 runtime 随 toolkit2 分发，仅作 API 参考 |
+| `rockchip-linux/mpp` | 1082 | 无 | MPP 硬编解码，仅 H.264 场景需要 |
+| ⚠️ `airockchip/ultralytics_yolov8` | 372 | **AGPL-3.0** | **许可证雷区**：仅可读不可抄，闭源商用必须避开 |
+
+### 13.3 ⚠️ 重大风险：MediaPipe → RKNN 无 C++ 先例
+
+原方案"手部全 NPU（palm + landmark 均转 `.rknn`）"的调研结论需要修正：
+
+- MediaPipe 手部**转 RKNN 有 RK3588 实证，但仅限 Python**（拆 `.task` → 4 个 tflite → rknn，板上手写流水线）。**C++ 版无任何开源实现**。
+- 即：palm 检测（本质就是目标检测）好办；**landmark 21 点的 NPU C++ 前后处理（手部裁剪、仿射变换对齐、归一化、坐标反投影）要完全自研**，且这块正是 `HandStable` / `HandMoveFromTo` / `HandNearObject` 三类条件的精度命门。
+- 社区量化精度参考：关键点误差 ~3% 以内，但**无严谨基准**，与本项目 G3 闸门（<5px）不能直接对齐。
+
+**处置建议（P0 之后、P2 之前插入一个 1 天 Spike）**：
+
+| 路线 | 成本 | 风险 | 适用 |
+|---|---|---|---|
+| **A. MediaPipe palm+landmark 全 NPU**（原方案） | landmark 流水线全自研，C++ 无先例 | 高（精度 + 工期双重不确定） | 若 G3 通过则最优 |
+| **B. YOLOv8-pose 手部替代** | 最低。`rknn_model_zoo` 有官方 `yolov8_pose` 示例，C++ 后处理可复用我方现有 YOLO 解码 | 中（**关键点语义不同**，需重标定区域/阈值，触碰"100% 保留"红线） | 作为 A 的备选 |
+| **C. 混合：palm=NPU + landmark=CPU(NEON FP32)** | 低 | 低（精度最接近现有行为） | G3 不达标时的兜底，架构已预留 |
+
+> 路线 A 与 C 均**不改 `stable_frames`、不改区域坐标**，可保"100% 保留"；路线 B 会改变 landmark 误差分布，**必须先在方案层面重新确认铁律边界**。
+
+### 13.4 对实施计划的影响
+
+1. **P2 工期需上修**：landmark NPU 流水线自研（原估 4~5 天 → 建议 **6~8 天**），或按 13.3 先做 1 天 Spike 再定。
+2. **P1 完成后可直接拉骨架**：`khadas_yolov8n_multithread` 的三核 worker 池 + RGA + V4L2 拿来做推理层基座，把我方代码只填在 `IDetector` 实现与 SOP 引擎两处，**可省 1~1.5 周**。
+3. **P0 黄金数据集的 `inputs.jsonl` 字段设计需覆盖 palm box**，这样后续无论走 A/B/C 路线，检测框与关键点都能分别对拍，不必重录。
+4. **许可证合规**：自建仓库只允许引入 Apache-2.0 / BSD-3 / MIT 代码；AGPL（`ultralytics_yolov8`）与无许可证（Gitee 框架、MPP）**只读不抄**。
 
