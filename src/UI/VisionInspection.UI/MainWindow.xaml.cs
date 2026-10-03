@@ -300,6 +300,17 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// 黄金数据集录制菜单：为 RK3588 移植采集对拍基线（frames + inputs.jsonl + decisions.jsonl）。
+    /// 录制不改变任何判定逻辑，异步写盘不影响帧率。
+    /// </summary>
+    private void GoldenRecorderMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var win = new GoldenRecorderWindow(DataContext is ViewModels.MainViewModel vm ? vm.SOPModuleInstance : null);
+        win.Owner = this;
+        win.Show();
+    }
+
+    /// <summary>
     /// 打开 SOP 生成向导（傻瓜化生成 SOP 流程 YAML）
     /// </summary>
     private void SopWizardMenuItem_Click(object sender, RoutedEventArgs e)

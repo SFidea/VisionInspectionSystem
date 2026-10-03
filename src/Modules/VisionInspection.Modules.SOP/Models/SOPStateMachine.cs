@@ -27,6 +27,12 @@ public class SOPStateMachine
     public IReadOnlyList<ViolationRecord> Violations => _violations.AsReadOnly();
     public IReadOnlyDictionary<string, TrackedObject> TrackedObjects => _trackedObjects;
 
+    /// <summary>
+    /// 【黄金数据集录制专用】最近一帧的逐条件判定快照。
+    /// 为旁路录制器提供 decisions.jsonl 的数据源，判定行为不受影响。
+    /// </summary>
+    public ConditionEvaluationResult? LastEvaluation { get; private set; }
+
     public event EventHandler<StepChangedEventArgs>? StepChanged;
     public event EventHandler<ViolationEventArgs>? ViolationDetected;
     public event EventHandler<SOPCompletedEventArgs>? WorkflowCompleted;
@@ -87,6 +93,10 @@ public class SOPStateMachine
 
         // 评估步骤条件（物体 + 手部姿态）
         var evaluation = _conditionEvaluator.EvaluateConditions(currentStep, detections, handResult);
+
+        // 黄金数据集录制：只做只读快照，不参与任何判定分支
+        LastEvaluation = evaluation;
+
         if (evaluation.IsPass)
         {
             CompleteCurrentStep(timestamp);

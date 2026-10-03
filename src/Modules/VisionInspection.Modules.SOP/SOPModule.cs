@@ -55,6 +55,9 @@ public class SOPModule : IDetectionModule
     // SOP 运行数据记录器：每个周期(OK/NG)+每步耗时写入按天文件
     private SopRunRecorder? _runRecorder;
 
+    // ★ 黄金数据集旁路录制器（P0）：默认 null（不录制），StartGoldenRecording 时才创建
+    private GoldenRecorder? _goldenRecorder;
+
     // 当前操作人（登录用户名），由上层（MainViewModel/MainWindow）在登录后写入，
     // 在每次 WorkflowCompleted 触发时注入事件参数，供记录器落盘与看板按用户过滤。
     private string _currentOperator = "";
@@ -905,6 +908,71 @@ public class SOPModule : IDetectionModule
 
         // 4) 状态机结果回填
         UpdateStateMachineResult(result);
+
+        // 5) ★ 黄金数据集旁路录制（P0）：在引擎判定之后复制数据，不影响任何判定分支
+        TryRecordGoldenFrame(handFrame, stateDetections, handResult, timestamp);
+    }
+
+    /// <summary>
+    /// 【黄金数据集旁路录制】把本帧"看到什么 + 判成什么"复制给录制器。
+    ///
+    /// 铁律：整段 try/catch 包裹，任何异常（含序列化失败、磁盘满）都只丢该帧，
+    ///       绝不向检测流程抛出 —— 录制备录不能影响生产。
+    /// </summary>
+    private void TryRecordGoldenFrame(
+        CaptureFrame? frame,
+        List<ObjectDetection> detections,
+        HandPoseEstimationResult? handResult,
+        DateTime timestamp)
+    {
+        var recorder = _goldenRecorder;
+        if (recorder == null || !recorder.IsRecording) return;
+
+        try
+        {
+            var sm = _stateMachine;
+            if (sm == null) return;
+
+            var step = GetCurrentStep();
+            var snapshot = new SOPStateMachineSnapshot
+            {
+                Timestamp = timestamp,
+                StepId = sm.CurrentStepId,
+                StepName = step?.StepName ?? "",
+                State = sm.CurrentState.ToString(),
+                IsPass = sm.LastEvaluation?.IsPass ?? false,
+                // NextSteps 是步骤 id 的字符串列表（YAML transitions）
+                NextStepId = step != null && step.NextSteps.Count > 0
+                    && int.TryParse(step.NextSteps[0], out var nid) ? nid : -1
+            };
+
+            // 逐条件布尔：CheckResults 与 PassConditions 同序
+            var eval = sm.LastEvaluation;
+            if (eval != null && step != null)
+            {
+                for (int i = 0; i < step.PassConditions.Count; i++)
+                {
+                    var key = step.PassConditions[i].Type.ToString();
+                    // 评估器 AND 短路时可能只返回部分结果，未评估的记 false
+                    bool met = i < eval.CheckResults.Count && eval.CheckResults[i].IsMet;
+                    snapshot.Conditions[key] = met;
+                }
+            }
+
+            // 本帧触发的违规（用于校验违规触发帧序号）
+            foreach (var v in sm.Violations)
+            {
+                if ((timestamp - v.Timestamp).TotalMilliseconds < 200)
+                    snapshot.Violations.Add(v.Type.ToString());
+            }
+
+            recorder.RecordFrame(frame, detections, handResult, snapshot);
+        }
+        catch (Exception ex)
+        {
+            // 绝不外泄
+            DebugLog($"[Golden] 录制异常（已忽略）: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -1361,6 +1429,46 @@ public class SOPModule : IDetectionModule
     public VisualOverlay GetVisualOverlay()
     {
         return new VisualOverlay();
+    }
+
+    // ====================================================================
+    // ★ 黄金数据集旁路录制（P0）—— 供 UI 控制，不影响任何判定逻辑
+    // ====================================================================
+
+    /// <summary>是否正在录制黄金数据集</summary>
+    public bool IsGoldenRecording => _goldenRecorder?.IsRecording ?? false;
+
+    /// <summary>录制状态一行摘要（供 UI 显示）</summary>
+    public string GoldenStatus => _goldenRecorder?.StatusLine ?? "未录制";
+
+    /// <summary>开始录制。失败返回 false，调用方仅提示，不打断检测。</summary>
+    public bool StartGoldenRecording(GoldenRecorderConfig config)
+    {
+        try
+        {
+            if (_goldenRecorder == null)
+            {
+                _goldenRecorder = new GoldenRecorder();
+                // 模块释放时一并关闭，避免后台线程泄漏
+                AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { _goldenRecorder?.Dispose(); } catch { } };
+            }
+            var ok = _goldenRecorder.Start(config);
+            if (ok)
+                GoldenRecorderConfigManager.Save(config);
+            return ok;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Golden] 启动录制异常: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>停止录制并落盘 summary.json</summary>
+    public void StopGoldenRecording()
+    {
+        try { _goldenRecorder?.Stop(); }
+        catch (Exception ex) { Console.WriteLine($"[Golden] 停止录制异常: {ex.Message}"); }
     }
 
 }

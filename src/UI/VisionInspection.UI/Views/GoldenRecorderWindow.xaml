@@ -1,0 +1,143 @@
+<Window x:Class="VisionInspection.UI.Views.GoldenRecorderWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="黄金数据集录制"
+        Height="620" Width="720"
+        MinHeight="520" MinWidth="640"
+        WindowStartupLocation="CenterOwner"
+        Background="#F5F7FA">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 说明 -->
+        <Border Grid.Row="0" Background="#FFF8E7" BorderBrush="#EF9F27" BorderThickness="1"
+                CornerRadius="8" Padding="14,12" Margin="0,0,0,12">
+            <StackPanel>
+                <TextBlock Text="⚠️ 仅用于 RK3588 移植对拍基线采集" FontSize="14" FontWeight="Bold"
+                           Foreground="#854F0B" Margin="0,0,0,6"/>
+                <TextBlock Text="录制不改变任何判定逻辑，异步写盘不影响帧率。每个案例录完点「结束录制」落盘。"
+                           FontSize="12" Foreground="#633806" TextWrapping="Wrap"/>
+                <TextBlock Text="产出：frames/ 原图　inputs.jsonl 看到什么　decisions.jsonl 判成什么（★板端验收依据）"
+                           FontSize="12" Foreground="#633806" Margin="0,4,0,0" TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+
+        <!-- 案例配置 -->
+        <Border Grid.Row="1" Background="White" CornerRadius="8" Padding="14,12" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="14"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Grid.Column="0">
+                    <TextBlock Text="案例名称 *" FontSize="12" Foreground="#6B7280" Margin="0,0,0,4"/>
+                    <Border Background="White" BorderBrush="#D1D5DB" BorderThickness="1" CornerRadius="6">
+                        <TextBox x:Name="CaseNameBox" FontSize="13" Padding="8,6"  Background="Transparent" BorderThickness="0"/>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel Grid.Row="0" Grid.Column="2">
+                    <TextBlock Text="输出根目录" FontSize="12" Foreground="#6B7280" Margin="0,0,0,4"/>
+                    <Border Background="White" BorderBrush="#D1D5DB" BorderThickness="1" CornerRadius="6">
+                        <TextBox x:Name="OutputRootBox" Text="golden" FontSize="13" Padding="8,6"  Background="Transparent" BorderThickness="0"/>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,10,0,0">
+                    <TextBlock Text="案例说明（写入 meta.json）" FontSize="12" Foreground="#6B7280" Margin="0,0,0,4"/>
+                    <Border Background="White" BorderBrush="#D1D5DB" BorderThickness="1" CornerRadius="6">
+                        <TextBox x:Name="CaseNoteBox" FontSize="13" Padding="8,6" Height="52"
+                                 AcceptsReturn="True" TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto"
+                                 BorderThickness="0" Background="Transparent"/>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,10,0,0">
+                    <TextBlock Text="录制参数" FontSize="12" Foreground="#6B7280" Margin="0,0,0,4"/>
+                    <WrapPanel>
+                        <CheckBox x:Name="SaveFramesCheck" Content="保存原图" IsChecked="True"
+                                  FontSize="12" Margin="0,0,14,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="质量" FontSize="12" Foreground="#6B7280" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <Border Background="White" BorderBrush="#D1D5DB" BorderThickness="1" CornerRadius="6">
+                            <TextBox x:Name="JpegQualityBox" Text="90" Width="46" FontSize="12" Padding="5,4" VerticalAlignment="Center" BorderThickness="0" Background="Transparent"/>
+                        </Border>
+                        <TextBlock Text="抽稀" FontSize="12" Foreground="#6B7280" VerticalAlignment="Center" Margin="12,0,4,0"/>
+                        <Border Background="White" BorderBrush="#D1D5DB" BorderThickness="1" CornerRadius="6">
+                            <TextBox x:Name="FrameStrideBox" Text="1" Width="46" FontSize="12" Padding="5,4" VerticalAlignment="Center" BorderThickness="0" Background="Transparent"/>
+                        </Border>
+                    </WrapPanel>
+                    <TextBlock Text="抽稀 1=每帧都存；帧数上限 0=不限" FontSize="11" Foreground="#9CA3AF" Margin="0,6,0,0"/>
+                </StackPanel>
+
+                <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Margin="0,10,0,0">
+                    <TextBlock Text="帧数上限" FontSize="12" Foreground="#6B7280" Margin="0,0,0,4"/>
+                    <Border Background="White" BorderBrush="#D1D5DB" BorderThickness="1" CornerRadius="6">
+                        <TextBox x:Name="MaxFramesBox" Text="2000" Width="90" FontSize="12" Padding="5,4" HorizontalAlignment="Left"  Background="Transparent" BorderThickness="0"/>
+                    </Border>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 状态与日志 -->
+        <Border Grid.Row="2" Background="White" CornerRadius="8" Padding="14,12" Margin="0,0,0,12">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                    <Ellipse x:Name="StatusDot" Width="10" Height="10" Fill="#9CA3AF"
+                             VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBlock x:Name="StatusText" Text="未录制" FontSize="14" FontWeight="Bold"
+                               Foreground="#374151" VerticalAlignment="Center"/>
+                </StackPanel>
+                <TextBox x:Name="LogBox" Grid.Row="1" FontSize="12" FontFamily="Consolas"
+                         IsReadOnly="True" TextWrapping="NoWrap"
+                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                         Background="#F9FAFB" Padding="8,6"
+                         BorderBrush="#E5E7EB" BorderThickness="1"/>
+            </Grid>
+        </Border>
+
+        <!-- 操作按钮 -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="StartButton" Content="● 开始录制" Width="118" Height="36"
+                    Margin="0,0,10,0" FontSize="13" FontWeight="Bold" Cursor="Hand"
+                    Background="#1D9E75" Foreground="White" BorderThickness="0"
+                    Click="StartButton_Click">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+            <Button x:Name="StopButton" Content="■ 结束录制" Width="118" Height="36"
+                    FontSize="13" FontWeight="Bold" Cursor="Hand" IsEnabled="False"
+                    Background="#A32D2D" Foreground="White" BorderThickness="0"
+                    Click="StopButton_Click">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+        </StackPanel>
+    </Grid>
+</Window>
