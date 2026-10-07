@@ -451,7 +451,12 @@ bool loadRecipe(const std::string& yamlPath,
                      s.stepId, s.stepName.c_str(), s.passConditions.size());
         for (const auto& n : s.nextSteps) std::fprintf(stderr, "%s ", n.c_str());
         std::fprintf(stderr, "] 条件: ");
-        for (const auto& c : s.passConditions) std::fprintf(stderr, "%s ", toString(c.type));
+        for (const auto& c : s.passConditions) {
+            std::fprintf(stderr, "%s(from='%s',to='%s',region='%s',obj='%s') ",
+                         toString(c.type), c.fromRegion.c_str(),
+                         c.toRegion.c_str(), c.zoneId.c_str(),
+                         c.targetObject.c_str());
+        }
         std::fprintf(stderr, "\n");
     }
 

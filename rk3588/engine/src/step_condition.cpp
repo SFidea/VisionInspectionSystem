@@ -190,6 +190,7 @@ ConditionCheckResult StepConditionEvaluator::CheckCondition(
         case ConditionType::HandInRegion:
         case ConditionType::HandNotInRegion:
         case ConditionType::HandStable:
+            return CheckHandCondition(cond, detections, handInput, ignoreFromRegion);
         case ConditionType::HandMoveFromTo:
             return CheckHandCondition(cond, detections, handInput, ignoreFromRegion);
 
@@ -351,6 +352,7 @@ ConditionCheckResult StepConditionEvaluator::CheckHandMoveFromTo(
     //   （那一步判的是"杯子到达嘴边"），必须借物体的区域访问记录，
     //   否则放回步骤会永远卡在 visitedFrom=false。
     HandTrackState* track = findTrack(hand->trackId);
+
 
     bool visitedFromByHand = track && track->hasVisited(cond.fromRegion);
 

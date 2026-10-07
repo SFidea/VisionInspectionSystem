@@ -53,7 +53,7 @@ std::vector<Detection> parseObjects(const std::string& line) {
         q = obj.find("\"box\":[");
         if (q != std::string::npos) {
             double b[4];
-            if (std::sscanf(obj.c_str() + q + 6, "%lf,%lf,%lf,%lf", &b[0], &b[1], &b[2], &b[3]) == 4) {
+            if (std::sscanf(obj.c_str() + q + 7, "%lf,%lf,%lf,%lf", &b[0], &b[1], &b[2], &b[3]) == 4) {
                 d.box.x = static_cast<float>(b[0]);
                 d.box.y = static_cast<float>(b[1]);
                 d.box.w = static_cast<float>(b[2] - b[0]);
@@ -93,7 +93,7 @@ FrameDetections parseHands(const std::string& line, int width, int height) {
 
         q = obj.find("\"valid_points\":");
         if (q != std::string::npos) {
-            int n = std::atoi(obj.c_str() + q + 14);
+            int n = std::atoi(obj.c_str() + q + 15);
             h.validPointCount = n;
             // C# 侧置信度硬编码 0.9f，此处同样置 0.9 以对齐 IsValid 判定
             for (int i = 0; i < 21 && i < n; ++i) h.scores[i] = 0.9f;
@@ -103,7 +103,7 @@ FrameDetections parseHands(const std::string& line, int width, int height) {
         q = obj.find("\"box\":[");
         if (q != std::string::npos) {
             double b[4];
-            if (std::sscanf(obj.c_str() + q + 6, "%lf,%lf,%lf,%lf", &b[0], &b[1], &b[2], &b[3]) == 4) {
+            if (std::sscanf(obj.c_str() + q + 7, "%lf,%lf,%lf,%lf", &b[0], &b[1], &b[2], &b[3]) == 4) {
                 h.box.x = static_cast<float>(b[0]);
                 h.box.y = static_cast<float>(b[1]);
                 h.box.w = static_cast<float>(b[2] - b[0]);
@@ -114,13 +114,18 @@ FrameDetections parseHands(const std::string& line, int width, int height) {
         // keypoints:[[x,y],...]
         q = obj.find("\"keypoints\":[");
         if (q != std::string::npos) {
-            const char* s = obj.c_str() + q + 12;
+            const char* s = obj.c_str() + q + 13;
+            char* end = nullptr;
             int idx = 0;
             while (idx < 21 && *s) {
-                while (*s == '[' || *s == ',' || *s == ' ') ++s;
-                if (*s != '[') break;
+                // ⚠️ 修：keypoints 值以 "[[" 开头（外层数组 + 每个点的数组）。
+                //    原实现第一个 while 会把两个 '[' 都跳过，随后 if(*s!='[') 直接 break
+                //    → 关键点全为 (0,0) → GetCenter() 恒为 (0,0) → 判定全错。
+                //    正确做法：逐层解析，每层各跳一个 '['。
+                while (*s == ',' || *s == ' ') ++s;
+                if (*s != '[') break;      // 外层点数组
                 ++s;
-                char* end = nullptr;
+                while (*s == ' ' || *s == ',') ++s;
                 double x = std::strtod(s, &end);
                 if (end == s) break;
                 s = end;
@@ -134,6 +139,7 @@ FrameDetections parseHands(const std::string& line, int width, int height) {
                 ++idx;
             }
         }
+
 
         // ★ 语义槽位：把 21 点按 MediaPipe 标准序号填入
         //   （RK3588 侧若换模型，这里改为查 kSlotToModelKpt 映射表）
