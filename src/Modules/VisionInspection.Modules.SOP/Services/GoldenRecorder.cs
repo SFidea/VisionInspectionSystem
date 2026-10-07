@@ -67,7 +67,13 @@ public sealed class GoldenRecorder : IDisposable
     {
         lock (_lock)
         {
-            if (IsRecording) return true;
+            if (IsRecording)
+            {
+                // 已在录制中：明确拒绝，而不是静默 return true
+                // （静默成功会让人以为换了个 case 重新录，实际数据仍写进旧目录）
+                Console.WriteLine($"[Golden] 已在录制中（{_caseDir}），拒绝重复启动");
+                return false;
+            }
             try
             {
                 if (string.IsNullOrWhiteSpace(cfg.CaseName))

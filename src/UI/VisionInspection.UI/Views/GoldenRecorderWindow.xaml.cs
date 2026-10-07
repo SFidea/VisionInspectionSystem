@@ -70,9 +70,20 @@ public partial class GoldenRecorderWindow : Window
 
         if (!_sopModule.StartGoldenRecording(cfg))
         {
-            MessageBox.Show(this, "启动录制失败，详情见窗口日志。", "提示",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
-            Log("✗ 启动失败（案例名非法或目录不可写）");
+            if (_sopModule.IsGoldenRecording)
+            {
+                MessageBox.Show(this,
+                    "录制已在进行中。请先点「结束录制」再开始新案例。\n\n" +
+                    $"当前正在录制：{_sopModule.GoldenStatus}",
+                    "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                Log("⚠️ 已在录制中，未重复启动。请先结束当前录制。");
+            }
+            else
+            {
+                MessageBox.Show(this, "启动录制失败，详情见窗口日志。", "提示",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                Log("✗ 启动失败（案例名非法或目录不可写）");
+            }
             return;
         }
 
@@ -142,7 +153,20 @@ public partial class GoldenRecorderWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         _statusTimer?.Stop();
-        // 关闭窗口不停止录制（用户可能切到主界面实际操作动作）
         base.OnClosed(e);
+
+        // 关闭窗口不停止录制（用户要切回主界面实际操作动作），
+        // 但必须明确告知——否则用户以为在录，实际已停录，会录出空目录。
+        if (_sopModule?.IsGoldenRecording == true)
+        {
+            var result = MessageBox.Show(this,
+                "录制仍在进行中。\n\n关闭窗口不会停止录制，但要结束录制请重新打开此窗口" +
+                "（配置 → 🗂 黄金数据集录制）。\n\n现在要停止录制吗？",
+                "录制进行中", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result == MessageBoxResult.Yes)
+            {
+                _sopModule.StopGoldenRecording();
+            }
+        }
     }
 }
