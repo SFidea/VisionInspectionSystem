@@ -23,6 +23,7 @@ if errorlevel 1 (
 
 cd /d "%~dp0.."
 if not exist build mkdir build
+if not exist build\obj mkdir build\obj
 
 echo [BUILD] compiling replay_main...
 cl /nologo /std:c++17 /O2 /EHsc /W3 /utf-8 ^
@@ -31,6 +32,7 @@ cl /nologo /std:c++17 /O2 /EHsc /W3 /utf-8 ^
    engine\src\types.cpp ^
    engine\src\yaml_config.cpp ^
    engine\src\step_condition.cpp ^
+   engine\src\violation_detector.cpp ^
    engine\src\state_machine.cpp ^
    tools\replay\replay_main.cpp ^
    /Fe:build\replay_main.exe ^

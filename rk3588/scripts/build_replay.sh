@@ -16,6 +16,7 @@ g++ -std=c++17 -O2 -Wall -Wextra -o build/replay_main \
     engine/src/types.cpp \
     engine/src/yaml_config.cpp \
     engine/src/step_condition.cpp \
+    engine/src/violation_detector.cpp \
     engine/src/state_machine.cpp \
     tools/replay/replay_main.cpp
 

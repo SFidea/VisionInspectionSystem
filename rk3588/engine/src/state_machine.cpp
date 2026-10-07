@@ -16,8 +16,11 @@ namespace vis {
 namespace sop {
 
 SOPStateMachine::SOPStateMachine(const std::vector<ZoneDefinition>* zones)
-    : _conditionEvaluator(this, zones) {
-    if (zones) _zoneList = *zones;
+    : _conditionEvaluator(this, zones), _violationDetector(this) {
+    if (zones) {
+        _zoneList = *zones;
+        _violationDetector.updateZones(*zones);
+    }
 }
 
 SOPStateMachine::~SOPStateMachine() = default;
@@ -38,6 +41,7 @@ std::string toLower(std::string s) {
 void SOPStateMachine::UpdateZones(const std::vector<ZoneDefinition>& zones) {
     _zoneList = zones;
     _conditionEvaluator.updateZones(zones);
+    _violationDetector.updateZones(zones);
 }
 
 void SOPStateMachine::Start(const SOPWorkflow& workflow, int64_t nowMs) {
@@ -50,6 +54,7 @@ void SOPStateMachine::Start(const SOPWorkflow& workflow, int64_t nowMs) {
 
     // ★ 清上一轮残留的稳定帧计数，防止新一轮步骤"秒过"
     _conditionEvaluator.ResetStableCounts();
+    _violationDetector.resetCooldowns();
 
     // ★ 起始步骤取工作流中最小的 StepId（配方 id 不一定从 1 开始）
     if (!_workflow->steps.empty()) {
@@ -272,49 +277,12 @@ void SOPStateMachine::DetectViolations(const SOPStep& step,
                                        const std::vector<Detection>& detections,
                                        const FrameDetections* handInput,
                                        int64_t ts) {
-    // ① 超时
-    // ★ 必须读全局开关：喝水配方 settings.enable_timeout_detection = false，
-    //   此时 C# 不产生 Timeout 违规。若忽略会产出大量假违规（实测 90 vs 基线 7）。
-    if (_workflow && _workflow->settings.enableTimeoutDetection && step.timeoutSec > 0) {
-        int64_t elapsed = ts - _stepStartMs;
-        if (elapsed > static_cast<int64_t>(step.timeoutSec) * 1000) {
-            // 只在刚超时时记一条，避免每帧刷屏
-            bool already = false;
-            for (const auto& v : _violations) {
-                if (v.type == ViolationType::Timeout && v.stepId == _currentStepId
-                    && ts - v.timestampMs < 1000) { already = true; break; }
-            }
-            if (!already) {
-                ViolationRecord v;
-                v.timestampMs = ts;
-                v.type = ViolationType::Timeout;
-                v.stepId = _currentStepId;
-                v.description = std::string("步骤 '") + step.stepName + "' 超时";
-                recordViolation(v);
-                if (_onViolationEval)
-                    _onViolationEval(toString(ViolationType::Timeout), true, v.description);
-            }
-            return;
-        }
-    }
-
-    // ② 违规物体（forbidden_objects）
-    for (const auto& d : detections) {
-        if (d.className.empty()) continue;
-        for (const auto& rule : step.violationRules) {
-            if (rule.type != ViolationType::ForbiddenObject) continue;
-            // description 里存禁止物体名（C# 版语义：规则描述即目标标签）
-            if (d.className != rule.description) continue;
-
-            ViolationRecord v;
-            v.timestampMs = ts;
-            v.type = ViolationType::ForbiddenObject;
-            v.stepId = _currentStepId;
-            v.description = std::string("检测到违规物体 '") + d.className + "'";
-            recordViolation(v);
-            if (_onViolationEval)
-                _onViolationEval(toString(ViolationType::ForbiddenObject), true, v.description);
-        }
+    // ★ 委托 ViolationDetector（8 类违规 + 3 秒冷却 + 跳步探测）
+    auto violations = _violationDetector.detect(step, detections, handInput, ts);
+    for (const auto& v : violations) {
+        recordViolation(v);
+        if (_onViolationEval)
+            _onViolationEval(toString(v.type), true, v.description);
     }
 }
 

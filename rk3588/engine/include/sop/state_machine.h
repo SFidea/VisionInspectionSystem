@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "sop/step_condition.h"
+#include "sop/violation_detector.h"
 #include "sop/types.h"
 
 namespace vis {
@@ -78,6 +79,9 @@ public:
     /// ★ 黄金数据集录制 / 离线对拍用的只读快照（不参与判定）
     const ConditionEvaluationResult* lastEvaluation() const { return _lastEvaluation; }
 
+    ViolationDetector&       violationDetector()       { return _violationDetector; }
+    const ViolationDetector& violationDetector() const { return _violationDetector; }
+
     const std::vector<ViolationRecord>&      violations() const { return _violations; }
     const std::vector<StepExecutionRecord>&   stepHistory() const { return _stepHistory; }
     const std::map<int, HandTrackState>&     handTracks() const {
@@ -122,6 +126,9 @@ private:
 
     SOPStateMachine* _selfStateMachine = this;   // 供评估器回查 currentStepId
     StepConditionEvaluator _conditionEvaluator;
+    /// ★ 违规检测器（8 类违规，含跳步探测）—— 与评估器共享 _conditionEvaluator 实例，
+    ///   故 isCurrentStep 隔离是必需的（否则探测会互踩主路径的稳定帧计数）。
+    ViolationDetector _violationDetector;
 
     SOPExecutionState _currentState = SOPExecutionState::Idle;
     int     _currentStepId = 0;

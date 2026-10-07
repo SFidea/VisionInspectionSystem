@@ -178,6 +178,17 @@ struct SOPStep {
 
     vector<StepCondition>  passConditions;   // C# PassConditions
     vector<ViolationRule>  violationRules;
+
+    /// 禁止物体标签（C# YAML 的 forbidden_objects）
+    vector<string> forbiddenObjects;
+
+    /// 必须放置的物料（C# YAML 的 required_objects）
+    /// 数据驱动：每个配方在 YAML 声明自己的必放物料，切换产品即换 YAML，引擎无需改代码。
+    vector<string> requiredObjects;
+
+    /// 必须保持存在的物体（C# YAML 的 must_keep）
+    vector<string> mustKeep;
+
     vector<int>            requiredPreviousSteps;
     vector<string>         nextSteps;         // C# NextSteps（步骤 id 的字符串）
 
