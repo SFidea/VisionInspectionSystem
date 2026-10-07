@@ -165,8 +165,19 @@ public sealed class GoldenRecorder : IDisposable
             // 帧数上限
             if (_maxFrames > 0 && _frameIndex > _maxFrames) return;
 
-            // SKBitmap 跨线程使用需持有引用；只读不写是安全的
-            var bmp = _saveFrames ? frame?.Image : null;
+            var src = frame?.Image;
+            int w = src?.Width ?? 0, h = src?.Height ?? 0;
+
+            // ⚠️ 必须在【检测线程内】把 SKBitmap 编码成 JPEG 字节，不能把 SKBitmap 传给后台线程。
+            // 原因：相机侧对 SKBitmap 做了帧缓冲复用 —— 新帧到达时旧 bitmap 被 Dispose()
+            // （MainViewModel: `_lastInferenceFrames[camId] = bitmap` + 旧图 Dispose），
+            // 后台线程再读它就是访问已释放的原生内存 → AccessViolationException(0x80004003)。
+            // 编码耗时约 1~3ms（1280x720），发生在检测线程，但换来的是绝对安全。
+            byte[]? jpeg = null;
+            if (_saveFrames && src != null)
+            {
+                jpeg = TryEncodeJpeg(src);
+            }
 
             if (_queue.Count >= _queueCapacity)
             {
@@ -179,11 +190,11 @@ public sealed class GoldenRecorder : IDisposable
                 Index = _frameIndex,
                 Timestamp = frame?.Timestamp ?? DateTime.Now,
                 FrameNumber = frame?.FrameNumber ?? _frameIndex,
-                Width = bmp?.Width ?? frame?.Image?.Width ?? 0,
-                Height = bmp?.Height ?? frame?.Image?.Height ?? 0,
-                Bitmap = bmp,
+                Width = w,
+                Height = h,
+                JpegBytes = jpeg,
                 Detections = CopyDetections(detections),
-                Hands = handResult?.Hands?.ToList() ?? new List<HandPose>(),
+                Hands = CopyHands(handResult),
                 Snapshot = snapshot
             });
             _signal.Release();
@@ -192,6 +203,24 @@ public sealed class GoldenRecorder : IDisposable
         {
             Interlocked.Increment(ref _errorCount);
             // 静默吞掉：录制失败绝不影响生产检测
+        }
+    }
+
+    /// <summary>
+    /// 在调用线程内把 SKBitmap 编码为 JPEG 字节。失败只丢该帧，绝不外泄。
+    /// </summary>
+    private byte[]? TryEncodeJpeg(SKBitmap bmp)
+    {
+        try
+        {
+            using var img = SKImage.FromBitmap(bmp);
+            using var data = img.Encode(SKEncodedImageFormat.Jpeg, _jpegQuality);
+            return data.ToArray();
+        }
+        catch
+        {
+            Interlocked.Increment(ref _errorCount);
+            return null;
         }
     }
 
@@ -207,6 +236,32 @@ public sealed class GoldenRecorder : IDisposable
                 Confidence = d.Confidence,
                 BoundingBox = d.BoundingBox,
                 Id = d.Id
+            });
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// 深拷贝手部结果：HandPose / HandKeypoint 都是引用对象，后台线程读它们时
+    /// 推理层可能已在下一帧重建或复用，必须把关键点数据整份拷出来。
+    /// </summary>
+    private static List<HandPose> CopyHands(HandPoseEstimationResult? src)
+    {
+        var list = new List<HandPose>();
+        if (src?.Hands == null) return list;
+        foreach (var h in src.Hands)
+        {
+            var kps = new List<HandKeypoint>(h.Keypoints.Count);
+            foreach (var k in h.Keypoints)
+                kps.Add(new HandKeypoint(k.Type, k.X, k.Y, k.Z, k.Confidence));
+
+            list.Add(new HandPose
+            {
+                TrackId = h.TrackId,
+                HandType = h.HandType,
+                BoundingBox = h.BoundingBox,
+                Timestamp = h.Timestamp,
+                Keypoints = kps
             });
         }
         return list;
@@ -247,13 +302,11 @@ public sealed class GoldenRecorder : IDisposable
 
     private void Persist(FrameRecord rec)
     {
-        if (rec.Bitmap != null && _saveFrames)
+        // 只写已编码好的 JPEG 字节 —— 后台线程绝不触碰 SKBitmap
+        if (rec.JpegBytes != null && rec.JpegBytes.Length > 0)
         {
             var imgPath = System.IO.Path.Combine(_caseDir, "frames", $"{rec.Index:D6}.jpg");
-            using var img = SKImage.FromBitmap(rec.Bitmap);
-            using var data = img.Encode(SKEncodedImageFormat.Jpeg, _jpegQuality);
-            using var fs = File.Create(imgPath);
-            data.SaveTo(fs);
+            File.WriteAllBytes(imgPath, rec.JpegBytes);
         }
 
         _inputsWriter?.WriteLine(BuildInputJson(rec));
@@ -436,7 +489,8 @@ internal sealed class FrameRecord
     public DateTime Timestamp;
     public int FrameNumber;
     public int Width, Height;
-    public SKBitmap? Bitmap;                                  // 仅开启存图时非空
+    /// <summary>已在检测线程内编码好的 JPEG 字节。后台线程绝不触碰 SKBitmap（会被相机 Dispose）。</summary>
+    public byte[]? JpegBytes;
     public List<ObjectDetection> Detections = new();
     public List<HandPose> Hands = new();
     public SOPStateMachineSnapshot Snapshot = new();
