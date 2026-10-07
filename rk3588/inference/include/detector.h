@@ -103,41 +103,6 @@ inline constexpr float kHandPointMinScore = 0.5f;
 // ★ 与 C# HandPose.IsValidGesture(default) 对齐
 inline constexpr int   kHandMinValidPoints = 8;
 
-// =============================================================================
-//  ★★★ GetCenter() —— 移植时最容易错的一处，务必照抄
-// =============================================================================
-//  C# 原码（HandPoseEstimationModels.cs:108）：
-//      if (Keypoints.Count == 0) return new SKPoint(0, 0);
-//      float avgX = Keypoints.Average(k => k.X);
-//      float avgY = Keypoints.Average(k => k.Y);
-//  即【全部关键点的算术平均】，不是 bbox 中心、不是腕点、不是 palm center(MCP均值)。
-//
-//  ⚠️ 关键点置信度在 C# 侧是【硬编码 0.9f】，列表内恒定，
-//     故"过滤低分点"与"不过滤"在此等价 —— 但仍须保证【有效点数一致】。
-//
-//  ⚠️ 分母 = 实际点数。C# 侧循环是 `i < landmarks.Count && i < 21`，
-//     即实际可能少于 21 点。RKNN 侧【必须输出与 Windows 版实测一致的点数】，
-//     否则中心物理位置系统性偏移 → HandInRegion/HandStable 判定改变（G4 必挂）。
-//
-//  ⚠️ 语义对比：
-//     手部判定 HandInRegion  → 【中心点包含】(zoneRect.Contains(center))
-//     物体判定 IsInZone      → 【矩形相交】(box.Intersects(zone))
-//     两者语义不同，不可混用。
-//
-//  ⚠️ 本函数 ≠ kPalmCenter（后者是 5 指 MCP 均值，当前 C# 判定链路并未使用）。
-inline Point handCenter(const HandResult& h) {
-    float sx = 0.0f, sy = 0.0f;
-    int n = 0;
-    for (int i = 0; i < 21; ++i) {
-        if (h.scores[i] >= kHandPointMinScore) {   // 仅统计有效点
-            sx += h.points[i].x;
-            sy += h.points[i].y;
-            ++n;
-        }
-    }
-    if (n == 0) return Point{0.0f, 0.0f};          // 与 C# 的 (0,0) 一致
-    return Point{sx / n, sy / n};
-}
 
 struct HandResult {
     // 21 个点的原始缓冲（保留原始顺序，便于对拍时逐点比对 Windows 版输出）
@@ -180,6 +145,42 @@ struct HandResult {
         return i >= 0 && i < kHandSlotCount && slotValid[i];
     }
 };
+
+// =============================================================================
+//  ★★★ GetCenter() —— 移植时最容易错的一处，务必照抄
+// =============================================================================
+//  C# 原码（HandPoseEstimationModels.cs:108）：
+//      if (Keypoints.Count == 0) return new SKPoint(0, 0);
+//      float avgX = Keypoints.Average(k => k.X);
+//      float avgY = Keypoints.Average(k => k.Y);
+//  即【全部关键点的算术平均】，不是 bbox 中心、不是腕点、不是 palm center(MCP均值)。
+//
+//  ⚠️ 关键点置信度在 C# 侧是【硬编码 0.9f】，列表内恒定，
+//     故"过滤低分点"与"不过滤"在此等价 —— 但仍须保证【有效点数一致】。
+//
+//  ⚠️ 分母 = 实际点数。C# 侧循环是 `i < landmarks.Count && i < 21`，
+//     即实际可能少于 21 点。RKNN 侧【必须输出与 Windows 版实测一致的点数】，
+//     否则中心物理位置系统性偏移 → HandInRegion/HandStable 判定改变（G4 必挂）。
+//
+//  ⚠️ 语义对比：
+//     手部判定 HandInRegion  → 【中心点包含】(zoneRect.Contains(center))
+//     物体判定 IsInZone      → 【矩形相交】(box.Intersects(zone))
+//     两者语义不同，不可混用。
+//
+//  ⚠️ 本函数 ≠ kPalmCenter（后者是 5 指 MCP 均值，当前 C# 判定链路并未使用）。
+inline Point handCenter(const HandResult& h) {
+    float sx = 0.0f, sy = 0.0f;
+    int n = 0;
+    for (int i = 0; i < 21; ++i) {
+        if (h.scores[i] >= kHandPointMinScore) {   // 仅统计有效点
+            sx += h.points[i].x;
+            sy += h.points[i].y;
+            ++n;
+        }
+    }
+    if (n == 0) return Point{0.0f, 0.0f};          // 与 C# 的 (0,0) 一致
+    return Point{sx / n, sy / n};
+}
 
 // =============================================================================
 //  4. 单帧推理输出（引擎的输入）
