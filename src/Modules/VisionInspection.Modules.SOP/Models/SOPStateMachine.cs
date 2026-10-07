@@ -33,6 +33,9 @@ public class SOPStateMachine
     /// </summary>
     public ConditionEvaluationResult? LastEvaluation { get; private set; }
 
+    /// <summary>【黄金数据集录制专用】当前生效的区域定义（供录制器写 meta.json）</summary>
+    public IReadOnlyDictionary<string, ZoneDefinition> Zones => _conditionEvaluator.Zones;
+
     public event EventHandler<StepChangedEventArgs>? StepChanged;
     public event EventHandler<ViolationEventArgs>? ViolationDetected;
     public event EventHandler<SOPCompletedEventArgs>? WorkflowCompleted;

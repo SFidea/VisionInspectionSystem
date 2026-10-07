@@ -110,6 +110,21 @@ def cmd_inspect(args):
     print("=" * 74)
 
     # ---- 完整性 ----
+    # ---- zones 快照（schema_version>=2 才有）----
+    zones = case["meta"].get("zones") or []
+    print("\n【区域快照】")
+    if zones:
+        for z in zones:
+            print("  %-18s [%.0f,%.0f]-[%.0f,%.0f]"
+                  % (z.get("id", "?"), z.get("x", 0), z.get("y", 0),
+                     z.get("x", 0) + z.get("width", 0),
+                     z.get("y", 0) + z.get("height", 0)))
+    else:
+        print("  无（schema_version < 2）")
+        print("  ★ 该基线缺少区域快照 —— 一旦现场重新标定区域，")
+        print("    历史 decisions.jsonl 的判定结果就永久无法复现，建议重录")
+    warns_zone = not zones
+
     print("\n【完整性】")
     nd, ni, nf = len(case["decisions"]), len(case["inputs"]), len(case["frame_files"])
     print("  decisions.jsonl : %d 帧" % nd)
@@ -185,6 +200,8 @@ def cmd_inspect(args):
     # ---- 质量体检 ----
     print("\n【质量体检】")
     warns = []
+    if warns_zone:
+        warns.append("meta.json 缺少 zones 快照 —— 区域一旦重新标定该基线即永久失效")
     if nd != ni:
         warns.append("decisions/inputs 行数不一致")
     if s.get("frames_dropped", 0) > 0:

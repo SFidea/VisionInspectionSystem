@@ -1446,13 +1446,15 @@ public class SOPModule : IDetectionModule
     {
         try
         {
+            // ★ 传入 zones 快照：随 meta.json 落盘，供 RK3588 复现基线时对齐区域坐标
+            var zonesForRecord = _stateMachine?.Zones.Values.ToList();
             if (_goldenRecorder == null)
             {
                 _goldenRecorder = new GoldenRecorder();
                 // 模块释放时一并关闭，避免后台线程泄漏
                 AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { _goldenRecorder?.Dispose(); } catch { } };
             }
-            var ok = _goldenRecorder.Start(config);
+            var ok = _goldenRecorder.Start(config, zonesForRecord);
             if (ok)
                 GoldenRecorderConfigManager.Save(config);
             return ok;

@@ -36,6 +36,13 @@ public class StepConditionEvaluator
     /// <summary>
     /// 动态更新区域定义（用于热切换配置）
     /// </summary>
+    /// <summary>
+    /// 【黄金数据集录制专用】当前生效的区域定义只读快照。
+    /// 录制器据此把 zones 写进 meta.json —— 否则一旦现场重新标定区域，
+    /// 历史黄金基线就永久失效（2026-10-07 实测踩到）。
+    /// </summary>
+    public IReadOnlyDictionary<string, ZoneDefinition> Zones => _zones;
+
     public void UpdateZones(IReadOnlyList<ZoneDefinition> zones)
     {
         _zones.Clear();

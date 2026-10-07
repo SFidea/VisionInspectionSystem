@@ -63,7 +63,7 @@ public sealed class GoldenRecorder : IDisposable
     // ================================================================ 生命周期
 
     /// <summary>开始录制。失败返回 false（调用方仅记日志，不打断检测）</summary>
-    public bool Start(GoldenRecorderConfig cfg)
+    public bool Start(GoldenRecorderConfig cfg, IReadOnlyList<ZoneDefinition>? zones = null)
     {
         lock (_lock)
         {
@@ -107,7 +107,7 @@ public sealed class GoldenRecorder : IDisposable
                 _droppedCount = _writtenCount = _errorCount = 0;
                 _queue.Clear();
 
-                WriteMeta(cfg);
+                WriteMeta(cfg, zones);
 
                 _cts = new CancellationTokenSource();
                 _worker = Task.Run(() => WorkerLoop(_cts.Token));
@@ -416,13 +416,27 @@ public sealed class GoldenRecorder : IDisposable
             : System.IO.Path.Combine(AppContext.BaseDirectory, outputRoot);
     }
 
-    private void WriteMeta(GoldenRecorderConfig cfg)
+    private void WriteMeta(GoldenRecorderConfig cfg, IReadOnlyList<ZoneDefinition>? zones)
     {
         try
         {
+            // ★ zones 快照 —— 必须随基线一起落盘。
+            //   否则现场一旦重新标定区域，历史 decisions.jsonl 的判定结果就永久无法复现
+            //   （2026-10-07 实测踩到：基线报 SkipStep，但按当前标定坐标回算根本不可能触发）。
+            var zoneList = new List<object>();
+            if (zones != null)
+            {
+                foreach (var z in zones)
+                    zoneList.Add(new {
+                        id = z.ZoneId,
+                        x = z.X, y = z.Y, width = z.Width, height = z.Height,
+                        name = z.Name
+                    });
+            }
+
             var meta = new
             {
-                schema_version = 1,
+                schema_version = 2,
                 case_name = cfg.CaseName,
                 note = cfg.CaseNote,
                 recorded_at = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
@@ -431,7 +445,9 @@ public sealed class GoldenRecorder : IDisposable
                 jpeg_quality = _jpegQuality,
                 frame_stride = _frameStride,
                 max_frames = _maxFrames,
-                reminder = "decisions.jsonl 为 RK3588 板端对拍验收依据（12类条件逐帧布尔）"
+                zones = zoneList,          // ★ 区域快照，见上方说明
+                reminder = "decisions.jsonl 为 RK3588 板端对拍验收依据（12类条件逐帧布尔）；" +
+                           "zones 为录制时的区域快照，复现基线必须使用它而非当前标定值"
             };
             File.WriteAllText(
                 System.IO.Path.Combine(_caseDir, "meta.json"),
