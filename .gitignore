@@ -81,3 +81,13 @@ outputs/
 *.pt
 *.weights
 *.log
+
+# Large binaries / media / IDE config (not source, do not commit)
+.trae/
+2026_05_08_22_25_IMG_9855.MOV
+cover.jpg
+cover_idea1.jpg
+cover_idea3.jpg
+cover_vertical.jpg
+mediamtx_v1.21.1_windows_amd64.zip
+mediamtx_v1.21.1_windows_amd64/
